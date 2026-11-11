@@ -6,7 +6,7 @@
 - 扫描 NAS 同机上的书库目录（默认只读），提取 EPUB / PDF / MOBI / AZW3 / CBZ 的内嵌元数据与封面
 - 文件哈希去重，识别移动与重命名；启动后常驻监听（watchdog/inotify + 定时轮询兜底）
 - 手动编辑元数据，字段级锁定，防止后续刮削覆盖
-- 可插拔刮削器：内置 Open Library 与 Google Books。高分或 ISBN 精确命中时自动写入未锁定字段，可在 Web 上撤销一次；也可批量刮削未处理书目
+- 可插拔刮削器：内置 Open Library、Google Books，以及通过独立 HTTP 服务接入的豆瓣中文源。中文书优先豆瓣，其他优先 Open Library。高分或 ISBN 精确命中时自动写入未锁定字段，可在 Web 上撤销一次；也可批量刮削未处理书目
 - 可选按模板整理、重命名书库文件（默认关闭；先预览再执行，可回滚）
 - Web 与 OPDS 共用一套 HTTP Basic 账号（环境变量配置）
 
@@ -79,6 +79,11 @@ alembic upgrade head
 | `ORGANIZE_TEMPLATE` | `{author}/{series}/{title}.{ext}` | 整理命名模板 |
 | `WATCH_ENABLED` | `true` | 启动后监听书库变化并自动扫描 |
 | `WATCH_POLL_SECONDS` | `300` | 定时轮询兜底间隔（秒）。部分 NAS 挂载上 inotify 可能不可靠 |
+| `DOUBAN_ENABLED` | `true` | 是否启用豆瓣中文刮削（通过独立的 douban-book-api） |
+| `DOUBAN_API_URL` | `http://127.0.0.1:3000` | douban-book-api 的根地址。Compose 网络内请用 `http://douban-book-api:3000` |
+| `DOUBAN_TIMEOUT_SECONDS` | `15` | 调用该服务的超时时间 |
+| `DOUBAN_MIN_INTERVAL_SECONDS` | `3` | 两次请求之间的最短间隔，降低对上游的压力 |
+| `DOUBAN_SEARCH_DETAIL_LIMIT` | `1` | 关键词搜索后，最多再请求几条 `/subject/:id` 补全简介 |
 | `PAGE_SIZE` | `50` | OPDS 与 API 默认分页大小 |
 | `HOST` / `PORT` | `0.0.0.0` / `8080` | 监听地址 |
 
@@ -89,6 +94,22 @@ alembic upgrade head
 - 自动写入会记录字段级来源和旧值；可在书目详情页「撤销自动写入」一次，恢复写入前的值。
 - 「刮削确认」页支持对 `scrape_status=pending` 的书目批量自动刮削。
 - 保存手改字段仍会自动锁定，后续刮削（含自动写入）会跳过锁定字段。
+
+## 豆瓣中文源
+
+主项目**不抓取**豆瓣网页，只通过 HTTP 调用独立服务 [zzwen6/douban-book-api](https://github.com/zzwen6/douban-book-api)（基于 acdzh/douban-book-api 的修复版）的 `/isbn/:isbn`、`/search?text=`，必要时再请求 `/subject/:id` 补全详情。
+
+本地开发时，先在另一进程启动该服务（默认 `http://127.0.0.1:3000`），再启动本项目。服务不可达时会跳过豆瓣，不影响 Open Library / Google Books。
+
+Docker 可选启用同文件中的 `douban-book-api` 服务（从该 GitHub 仓库构建）：
+
+```bash
+# 在同一 Compose 网络里把 URL 指向服务名
+echo 'DOUBAN_API_URL=http://douban-book-api:3000' >> .env
+docker compose --profile douban up --build -d
+```
+
+中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签目前常为空；若 `original_title` 被误填成作者名，本项目会丢弃。
 
 ## 整理书库文件（默认关闭）
 
@@ -138,7 +159,7 @@ alembic upgrade head
 - 高分或 ISBN 精确命中自动写入未锁定字段；低于阈值仍需人工确认。自动写入可撤销一次。
 - 在 Web 中保存某字段会自动锁定该字段；刮削合并时跳过已锁定字段。
 - 默认不把元数据写回原书文件。整理/改名默认关闭，需显式打开，并且只移动文件。
-- 中文书元数据：本轮调研后未新增需绕过反爬或非官方抓取的插件。Open Library 已能命中部分中文 ISBN。可选合规源对比见 `docs/CHINESE_SOURCES.md`。
+- 中文书元数据：通过独立的 douban-book-api 接入豆瓣（不在本进程抓网页）。也可继续只用 Open Library。对比与风险见 `docs/CHINESE_SOURCES.md`。
 - Web 与 OPDS 共用一个 HTTP Basic 账号，不同步阅读进度。
 
 ## 备份
