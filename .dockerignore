@@ -1,12 +1,40 @@
+# 版本控制 / CI
+.git
+.github
+.gitignore
+
+# 本地环境与依赖
 .venv
 venv
-.git
-data
-library
+.env
+.env.*
+!.env.example
 node_modules
 web/node_modules
 web/dist
 __pycache__
 .pytest_cache
+.mypy_cache
+.ruff_cache
 *.pyc
-.env
+*.pyo
+
+# 运行数据与书库（通过 volume 挂载）
+data
+douban-cache
+library
+
+# 不进镜像的内容
+tests
+docs
+scripts
+*.log
+*.db
+*.db-*
+*.db.*
+*.sqlite*
+*.tar.gz
+*.zip
+Dockerfile
+docker-compose*.yml
+.dockerignore

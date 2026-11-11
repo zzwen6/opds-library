@@ -16,10 +16,17 @@
 ## 快速开始（Docker）
 
 ```bash
-cp .env.example .env          # 务必修改 AUTH_PASSWORD
-# 把书放到 ./library，或在 .env / compose 中设置 LIBRARY_HOST_PATH=/your/nas/books
-docker compose up --build -d
+cp .env.example .env
+# 编辑 .env：
+#   AUTH_PASSWORD      必须改成你自己的密码
+#   LIBRARY_HOST_PATH  NAS 上的书库目录，如 /volume1/books
+#   DATA_HOST_PATH     数据目录（数据库、封面），如 ./data
+#   PUID / PGID        运行容器的用户，见下方「NAS 权限」
+mkdir -p data douban-cache    # 先建好数据目录，避免被 Docker 以 root 身份自动创建
+docker compose up -d --build
 ```
+
+Compose 默认会一起启动中文刮削用的 `douban-book-api`（从 GitHub 公开仓库构建，只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 
 然后访问：
 
@@ -32,6 +39,16 @@ docker compose up --build -d
 在阅读器里填写 OPDS 地址 `http://<主机>:8080/opds`（大多数阅读器）或 `http://<主机>:8080/opds2`（支持 OPDS 2.0 的阅读器，如 Thorium），认证方式选择 HTTP Basic。若要暴露到外网，请放在 HTTPS 反代后面；不要在明文 HTTP 上使用 Basic 认证出网。
 
 书库目录默认以 **只读**（`:ro`）方式挂载。封面、缩略图和数据库写在 `./data`（或 `DATA_HOST_PATH`）。若要启用整理/改名，见下方说明。
+
+### NAS 权限
+
+镜像以 **非 root 用户** 运行，默认 UID/GID 为 `1000:1000`，可在 `.env` 里用 `PUID` / `PGID` 修改（Compose 的 `user:` 和镜像构建参数都会使用它）。在 NAS 上用 `id 你的用户名` 查看实际值，例如群晖常见是 `1026:100`。
+
+- **数据目录（`DATA_HOST_PATH`）必须可写**：数据库、封面、缩略图都写在这里。若目录由 root 创建，执行 `sudo chown -R PUID:PGID ./data`（换成实际数字）。
+- **书库目录（`LIBRARY_HOST_PATH`）默认只读挂载**，该用户能读就行。
+- **启用整理/改名时书库必须可写**：除了去掉挂载上的 `:ro`，这个用户还要对书库目录及其子目录有写权限。
+- 如果目录不存在，Docker 会以 root 身份自动创建，容器内的非 root 用户就写不进去，所以请先 `mkdir` 再启动。
+- 从旧版（以 root 运行）升级时，`./data` 里已有的文件属主可能是 root，需要先 chown 一次。
 
 ## 本地开发
 
@@ -48,6 +65,8 @@ export LIBRARY_PATH=./library DATA_PATH=./data
 export AUTH_USERNAME=admin AUTH_PASSWORD=changeme
 python -m app.main
 ```
+
+也可以把 `.env.example` 复制成 `.env` 使用（应用会读取当前目录的 `.env`），但要改用文件末尾「本机开发」那一段的 `LIBRARY_PATH` / `DATA_PATH` / `DOUBAN_API_URL=http://127.0.0.1:3000`，Docker 那一段的 `douban-book-api` 主机名在本机解析不到。
 
 开发前端时可另开终端：`cd web && npm run dev`（Vite 会把 `/api`、`/opds`、`/opds2` 代理到 8080 端口）。
 
@@ -106,13 +125,7 @@ alembic upgrade head
 
 本地开发时，先在另一进程启动该服务（默认 `http://127.0.0.1:3000`），再启动本项目。服务不可达时会跳过豆瓣，不影响 Open Library / Google Books。
 
-Docker 可选启用同文件中的 `douban-book-api` 服务（从该 GitHub 仓库构建）：
-
-```bash
-# 在同一 Compose 网络里把 URL 指向服务名
-echo 'DOUBAN_API_URL=http://douban-book-api:3000' >> .env
-docker compose --profile douban up --build -d
-```
+Docker 部署时，`docker-compose.yml` 默认一起启动该服务（从 GitHub 构建，缓存写在 `DOUBAN_CACHE_HOST_PATH`，默认 `./douban-cache`）。服务只在 Compose 内部网络可见；需要从宿主机调试时，取消 compose 里 `ports: 3000:3000` 的注释。不需要豆瓣源时，在 `.env` 里设 `DOUBAN_ENABLED=false`，并用 `docker compose up -d --build --no-deps opds-library` 只启动书库。
 
 中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签取自页面里的「豆瓣成员常用标签」（需 douban-book-api 含 2026-11-11 的标签修复），通常有 5–10 个，作为候选标签参与写入；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
 

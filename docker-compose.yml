@@ -1,9 +1,17 @@
+# 用法：cp .env.example .env，改好 AUTH_PASSWORD 和路径后
+#   docker compose up -d --build
 services:
   opds-library:
-    build: .
-    image: opds-library:0.5.0
+    build:
+      context: .
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    image: opds-library:0.5.1
+    # 以非 root 运行；UID/GID 需对 /data（以及启用整理时的 /library）有写权限，见 README
+    user: "${PUID:-1000}:${PGID:-1000}"
     ports:
-      - "8080:8080"
+      - "${HTTP_PORT:-8080}:8080"
     environment:
       AUTH_USERNAME: ${AUTH_USERNAME:-admin}
       AUTH_PASSWORD: ${AUTH_PASSWORD:-changeme}
@@ -13,13 +21,12 @@ services:
       PAGE_SIZE: ${PAGE_SIZE:-50}
       SCRAPE_AUTO_THRESHOLD: ${SCRAPE_AUTO_THRESHOLD:-90}
       ORGANIZE_ENABLED: ${ORGANIZE_ENABLED:-false}
-      ORGANIZE_TEMPLATE: ${ORGANIZE_TEMPLATE:-"{author}/{series}/{title}.{ext}"}
+      ORGANIZE_TEMPLATE: ${ORGANIZE_TEMPLATE:-{author}/{series}/{title}.{ext}}
       WATCH_ENABLED: ${WATCH_ENABLED:-true}
       WATCH_POLL_SECONDS: ${WATCH_POLL_SECONDS:-300}
       DOUBAN_ENABLED: ${DOUBAN_ENABLED:-true}
-      # 本机开发默认指向宿主机上的 douban-book-api。
-      # 若与下方可选服务一起用 Compose 启动，请改为 http://douban-book-api:3000
-      DOUBAN_API_URL: ${DOUBAN_API_URL:-http://127.0.0.1:3000}
+      # 默认指向同一 Compose 里的 douban-book-api 服务
+      DOUBAN_API_URL: ${DOUBAN_API_URL:-http://douban-book-api:3000}
       DOUBAN_TIMEOUT_SECONDS: ${DOUBAN_TIMEOUT_SECONDS:-15}
       DOUBAN_MIN_INTERVAL_SECONDS: ${DOUBAN_MIN_INTERVAL_SECONDS:-3}
       DOUBAN_COVER_BROWSER_HEADERS: ${DOUBAN_COVER_BROWSER_HEADERS:-true}
@@ -29,20 +36,30 @@ services:
       #   - ${LIBRARY_HOST_PATH:-./library}:/library
       - ${LIBRARY_HOST_PATH:-./library}:/library:ro
       - ${DATA_HOST_PATH:-./data}:/data
+    depends_on:
+      douban-book-api:
+        condition: service_started
     restart: unless-stopped
 
-  # 可选：中文刮削用的 douban-book-api。默认不启动。
-  # 启用：docker compose --profile douban up --build -d
-  # 同时把 DOUBAN_API_URL 设为 http://douban-book-api:3000
+  # 中文刮削用的 douban-book-api（从 GitHub 公开仓库构建）。
+  # 不需要豆瓣源时：.env 里设 DOUBAN_ENABLED=false，
+  # 并用 docker compose up -d --build opds-library --no-deps 只启动书库。
   douban-book-api:
-    profiles: ["douban"]
     image: douban-book-api:zzwen6
     build:
       context: https://github.com/zzwen6/douban-book-api.git#master
-    ports:
-      - "3000:3000"
+    # 默认只在 Compose 内部网络可见；需要从宿主机调试时取消注释
+    # ports:
+    #   - "3000:3000"
     environment:
+      # 该服务读取 CACHE_DIR，在其中保存 books.sqlite 缓存
       CACHE_DIR: /cache
     volumes:
-      - ${DOUBAN_CACHE_PATH:-./data/douban-cache}:/cache
+      - ${DOUBAN_CACHE_HOST_PATH:-./douban-cache}:/cache
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
