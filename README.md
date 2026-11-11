@@ -293,7 +293,7 @@ API：`GET /api/duplicates[?include_ignored=true]`、`POST /api/duplicates/ignor
 
 ## 推送到 GitHub 后立刻部署
 
-镜像由 GitHub Actions 构建并推到 GHCR（`ghcr.io/zzwen6/opds-library`、`ghcr.io/zzwen6/douban-book-api`），NAS 上的 Watchtower 经 Cloudflare Tunnel 收到 webhook 后拉取 `:latest` 并重建容器。一次性配置（GHCR 登录、仓库 Secrets、Tunnel ingress、令牌轮换）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+镜像由 GitHub Actions 构建并推到 GHCR（`ghcr.io/zzwen6/opds-library`、`ghcr.io/zzwen6/douban-book-api`），NAS 上的 Watchtower 经 nginx 反向代理收到 webhook 后拉取 `:latest` 并重建容器。一次性配置（GHCR 登录、仓库 Secrets、nginx 反代、令牌轮换）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 备份
 

@@ -87,8 +87,9 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_TIMEOUT: 30s
-    # 只绑在回环上，局域网/公网访问不到。Cloudflare Tunnel 在同一台 NAS 上再转到这里。
-    # 若 cloudflared 也跑在本 Compose 网络里，可改为指向 http://watchtower:8080，并删掉下面的 ports。
+    # 只绑在回环上，局域网/公网访问不到。同一台 NAS 上的 nginx 反代到这里即可。
+    # 若 nginx 也跑在本 Compose 网络里，可改为指向 http://watchtower:8080，并删掉下面的 ports。
+    # 若 nginx 在另一台机器，把 127.0.0.1 改成 NAS 内网地址，并在防火墙中只允许那台机器访问。
     ports:
       - "127.0.0.1:8081:8080"
     labels:
