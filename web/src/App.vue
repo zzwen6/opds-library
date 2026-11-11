@@ -16,6 +16,13 @@
       <button class="btn ghost" @click="logout">退出</button>
     </header>
     <router-view />
+    <footer class="opds-footer muted">
+      OPDS 1.2：<code>{{ origin }}/opds</code>
+      <span class="sep">·</span>
+      OPDS 2.0：<code>{{ origin }}/opds2</code>
+      <span class="sep">·</span>
+      阅读器里用网页登录的同一个账号
+    </footer>
   </div>
   <router-view v-else />
 </template>
@@ -28,6 +35,7 @@ import { api, clearAuth } from "./api/client";
 const route = useRoute();
 const router = useRouter();
 const scanning = ref(false);
+const origin = window.location.origin;
 
 async function rescan() {
   scanning.value = true;
@@ -54,3 +62,9 @@ function logout() {
   router.push("/login");
 }
 </script>
+
+<style scoped>
+.opds-footer { padding: 16px 24px 24px; text-align: center; }
+.opds-footer code { user-select: all; }
+.opds-footer .sep { margin: 0 8px; }
+</style>

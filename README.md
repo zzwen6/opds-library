@@ -1,6 +1,6 @@
 # 我的书库（OPDS Library）
 
-自用的 Web 电子书管理站，并对外提供 **OPDS 1.2** 接口，可供 KOReader、Moon+ Reader、Panels、Thorium、Readest 等阅读器浏览和下载。
+自用的 Web 电子书管理站，并对外提供 **OPDS 1.2（Atom）** 和 **OPDS 2.0（JSON）** 两套接口，可供 KOReader、Moon+ Reader、Panels、Thorium、Readest 等阅读器浏览和下载。
 
 - 自建 SQLite 元数据库，**不读取、不写入 Calibre 的 `metadata.db` / OPF**
 - 扫描 NAS 同机上的书库目录（默认只读），提取 EPUB / PDF / MOBI / AZW3 / CBZ 的内嵌元数据与封面
@@ -10,6 +10,7 @@
 - 可选按模板整理、重命名书库文件（默认关闭；先预览再执行，可回滚）
 - 批量编辑：多选书目，一次改作者、系列（可自动编号）、标签、语言、出版社；作者写法归并；先预览影响范围，跳过已锁定字段，可撤销（0.4.0）
 - 重复书检测：文件哈希相同、ISBN 相同、书名+作者模糊匹配三类线索；可把同一本书的多种格式合并到一个条目，或标记“不是重复”；只改数据库，不删磁盘文件，合并可撤销（0.4.0）
+- OPDS 2.0（JSON）：与 1.2 并存，覆盖相同的目录，另有语言浏览、排序/语言筛选（facet）、单书清单和 OPDS 认证文档（0.5.0）
 - Web 与 OPDS 共用一套 HTTP Basic 账号（环境变量配置）
 
 ## 快速开始（Docker）
@@ -23,11 +24,12 @@ docker compose up --build -d
 然后访问：
 
 - Web 管理：http://localhost:8080/ （用 `AUTH_USERNAME` / `AUTH_PASSWORD` 登录）
-- OPDS 根目录：http://localhost:8080/opds
+- OPDS 1.2 根目录：http://localhost:8080/opds
+- OPDS 2.0 根目录：http://localhost:8080/opds2
 - OpenSearch：http://localhost:8080/opds/search.xml
 - API 文档：http://localhost:8080/api/docs
 
-在阅读器里填写 OPDS 地址 `http://<主机>:8080/opds`，认证方式选择 HTTP Basic。若要暴露到外网，请放在 HTTPS 反代后面；不要在明文 HTTP 上使用 Basic 认证出网。
+在阅读器里填写 OPDS 地址 `http://<主机>:8080/opds`（大多数阅读器）或 `http://<主机>:8080/opds2`（支持 OPDS 2.0 的阅读器，如 Thorium），认证方式选择 HTTP Basic。若要暴露到外网，请放在 HTTPS 反代后面；不要在明文 HTTP 上使用 Basic 认证出网。
 
 书库目录默认以 **只读**（`:ro`）方式挂载。封面、缩略图和数据库写在 `./data`（或 `DATA_HOST_PATH`）。若要启用整理/改名，见下方说明。
 
@@ -47,7 +49,7 @@ export AUTH_USERNAME=admin AUTH_PASSWORD=changeme
 python -m app.main
 ```
 
-开发前端时可另开终端：`cd web && npm run dev`（Vite 会把 `/api` 与 `/opds` 代理到 8080 端口）。
+开发前端时可另开终端：`cd web && npm run dev`（Vite 会把 `/api`、`/opds`、`/opds2` 代理到 8080 端口）。
 
 下载公有领域样书：
 
@@ -200,6 +202,41 @@ API：`GET /api/duplicates[?include_ignored=true]`、`POST /api/duplicates/ignor
 | `/opds/search?q=` | 搜索获取馆 |
 | `/opds/download/{file_id}` | 下载（`rel=acquisition`，**不是** open-access）。一本书有多种格式时给出多个下载链接；内容完全相同的副本只给一个 |
 | `/opds/covers/{book_uuid}`、`/opds/thumbs/{book_uuid}` | 封面与缩略图 |
+
+
+## OPDS 2.0 端点（JSON，0.5.0）
+
+遵循 [OPDS 2.0](https://specs.opds.io/opds-2.0)（原 drafts.opds.io/opds-2.0）与 Readium Web Publication Manifest 元数据。feed 的媒体类型是 `application/opds+json`，单书清单是 `application/opds-publication+json`。与 1.2 并存，1.2 的地址和行为不变；两个根目录互相用 `rel="alternate"` 链接。
+
+| 路径 | 说明 |
+| --- | --- |
+| `/opds2` | 导航根：最新入库、全部书目、作者、丛书、标签、语言；另附“最新入库”分组（最多 10 本） |
+| `/opds2/new` | 最新入库 |
+| `/opds2/books` | 全部书目（默认按书名） |
+| `/opds2/authors`、`/opds2/authors/{id}` | 作者导航与列表 |
+| `/opds2/series`、`/opds2/series/{id}` | 丛书（默认按丛书序号） |
+| `/opds2/tags`、`/opds2/tags/{id}` | 标签 |
+| `/opds2/languages`、`/opds2/languages/{code}` | 按语言浏览（1.2 没有） |
+| `/opds2/search{?query}` | 搜索，模板链接；`?query=` 和 `?q=` 都可以。匹配书名、副标题、ISBN、作者、标签 |
+| `/opds2/publications/{book_uuid}` | 单本书的出版物清单 |
+| `/opds2/download/{file_id}`、`/opds2/covers/{uuid}`、`/opds2/thumbs/{uuid}` | 下载、封面、缩略图（与 1.2 同一实现） |
+| `/opds2/auth` | OPDS 认证文档（免认证） |
+
+说明：
+
+- **分页**：`?page=N`，每页 `PAGE_SIZE` 本。feed 的 `metadata` 带 `numberOfItems`、`itemsPerPage`、`currentPage`，`links` 带 `first`、`previous`、`next`、`last`。
+- **筛选（facets）**：所有书目列表都有“排序”（默认 / 最新入库 / 书名）和“语言”两组，参数为 `sort=added|title`、`lang=zh` 等，翻页时会保留。
+- **元数据**：书名、副标题、作者（带作者列表链接）、译者、标识（有 ISBN 时为 `urn:isbn:`，否则 `urn:uuid:`）、语言、出版社、出版日期、简介、标签（`subject`）、丛书及序号（`belongsTo.series`）、页数、修改时间。出版日期只有年或年月时补成当月/当年第一天，例如 `2012-8` 输出 `2012-08-01`。
+- **获取链接**：每个文件一个 `rel="http://opds-spec.org/acquisition"` 链接，带正确的媒体类型和文件大小。合并过的多格式书目会列出所有格式；内容完全相同的副本只给一个链接。私有书库需要登录，所以不用 open-access / `download`。
+- **磁盘上已缺失文件的书**：OPDS 2.0 要求每本书至少有一个获取链接，所以这类书不出现在 2.0 的列表里（1.2 仍列出）。
+- **认证**：与 1.2 同一个 HTTP Basic 账号。未登录访问 `/opds2/*` 返回 401，同时带 `WWW-Authenticate: Basic`、`Link: <…/opds2/auth>; rel="http://opds-spec.org/auth/document"`，响应体就是 [OPDS 认证文档](https://drafts.opds.io/authentication-for-opds-1.0)（`http://opds-spec.org/auth/basic`），Thorium 等客户端会据此弹出登录框。1.2 的 401 保持原样。
+- **阅读器怎么选地址**：
+  | 阅读器 | 建议地址 | 说明 |
+  | --- | --- | --- |
+  | Thorium Reader（桌面） | `/opds2` | 原生支持 OPDS 2.0 和认证文档，会弹出登录框；也可直接用 `/opds` |
+  | KOReader、Moon+ Reader、Panels、Librera、Calibre 内置浏览器等 | `/opds` | 只支持 OPDS 1.x |
+  | Readest、其他基于 Readium 的阅读器 | 先试 `/opds2`，不行用 `/opds` | 未逐一实测 |
+- **测试**：`tests/test_opds2.py` 用官方 JSON Schema（已放在 `tests/schemas/`，来源见其中的 README）校验所有输出。
 
 ## 设计约定
 

@@ -77,6 +77,7 @@ def add_common_links(feed, base: str, self_href: str, kind: str = "navigation") 
 def root_feed(base: str) -> bytes:
     feed = _feed("我的书库", _abs(base, "/opds"), base)
     add_common_links(feed, base, _abs(base, "/opds"), "navigation")
+    _link(feed, "alternate", _abs(base, "/opds2"), "application/opds+json", title="OPDS 2.0（JSON）")
     entries = [
         ("最新入库", "/opds/new", ACQ_TYPE, "按入库时间查看最近加入的书"),
         ("全部书目", "/opds/books", ACQ_TYPE, "浏览全部图书"),

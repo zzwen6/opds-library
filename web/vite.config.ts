@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": "http://127.0.0.1:8080",
-      "/opds": "http://127.0.0.1:8080",
+      "/opds": "http://127.0.0.1:8080", // 同时覆盖 /opds2
     },
   },
   build: {
