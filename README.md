@@ -27,6 +27,8 @@ mkdir -p data douban-cache    # 先建好数据目录，避免被 Docker 以 roo
 # Compose 只使用现成镜像，不负责构建。先在本地构建两个镜像（PUID/PGID 与 .env 保持一致）：
 docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.1 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
+# Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
+# 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
 
 docker compose up -d
 ```
