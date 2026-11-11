@@ -25,7 +25,7 @@ cp .env.example .env
 mkdir -p data douban-cache    # 先建好数据目录，避免被 Docker 以 root 身份自动创建
 
 # Compose 只使用现成镜像，不负责构建。先在本地构建两个镜像（PUID/PGID 与 .env 保持一致）：
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.1 .
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.2 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 # Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
 # 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
@@ -127,6 +127,19 @@ alembic upgrade head
 - 自动写入会记录字段级来源和旧值；可在书目详情页「撤销自动写入」一次，恢复写入前的值。
 - 「刮削确认」页支持对 `scrape_status=pending` 的书目批量自动刮削。
 - 保存手改字段仍会自动锁定，后续刮削（含自动写入）会跳过锁定字段。
+
+### 文件名 / 脏标题清洗（0.5.2）
+
+`Kindle电子书:《三体》.mobi` 这类文件名或内嵌标题，刮削前会先清洗成干净书名再查询（`app/title_clean.py`）：
+
+- 有书名号时取第一个《》里的内容，书名号外像人名的部分作为作者提示（`刘慈欣《三体》`、`《三体》作者：刘慈欣`）。
+- 去掉来源/营销前后缀：`Kindle电子书`、`电子书`、`epub/mobi/azw3/txt`、`精校版`、`完整版`、`全本`、`高清`、`扫描版`、`修订版`、z-library 等站点名、网址、ISBN。
+- 全/半角冒号：左边是杂词就丢掉；否则当作「主标题:副标题」保留（`三体2：黑暗森林`）。
+- 去掉 【】[]()（） 括注；识别 `作者 - 书名`、`书名 - 作者`、`书名_作者`、全角空格。
+- 用清洗后的书名查不到时，依次退到去掉副标题、去掉卷号的短书名（`三体2:黑暗森林` → `三体2` → `三体`）。
+- 扫描时：内嵌标题干净就原样用；内嵌标题是脏标题、或没有内嵌标题时用清洗结果；锁定的书名不会被改。
+- 0.5.2 同时修复了 MOBI/AZW3 内嵌元数据从未被读取的问题（之前 `mobi.extract` 调用参数错误被静默吞掉）。
+- 已入库的旧书不会因为重新扫描而改名（文件没变化时扫描会跳过）；对它们重新刮削即可，查询会自动用清洗后的书名。
 
 ## 豆瓣中文源
 

@@ -21,6 +21,7 @@ from app.scrapers.douban import (
 from app.services.books import BookUpdate, locked_fields, update_book
 from app.config import get_settings
 from app.util import normalize_space
+from app.title_clean import clean_title, query_titles, scoring_title
 import httpx
 import logging
 
@@ -105,6 +106,14 @@ def scrape_book(session: Session, book: Book) -> list[CandidateOut]:
     session.flush()
 
     authors = _authors_of(book)
+    # 书名可能是「Kindle电子书:《三体》」这类文件名式脏标题：查询用清洗后的书名，查不到再逐步缩短
+    queries = query_titles(book.title)
+    score_title = scoring_title(book.title)
+    score_authors = authors
+    if not score_authors and book.title:
+        hint_author = clean_title(book.title).author
+        if hint_author:
+            score_authors = [hint_author]
     collected: list[Candidate] = []
     errors: list[str] = []
     for cls in list_scrapers():
@@ -113,15 +122,17 @@ def scrape_book(session: Session, book: Book) -> list[CandidateOut]:
             found: list[Candidate] = []
             if book.isbn13:
                 found = scraper.lookup_isbn(book.isbn13)
-            if not found and book.title:
-                found = scraper.search(book.title, authors[0] if authors else None, book.language)
+            for query in queries:
+                if found:
+                    break
+                found = scraper.search(query, authors[0] if authors else None, book.language)
                 if not found and book.language:
-                    found = scraper.search(book.title, authors[0] if authors else None, None)
+                    found = scraper.search(query, authors[0] if authors else None, None)
             for cand in found:
                 score_candidate(
                     cand,
-                    title=book.title,
-                    authors=authors,
+                    title=score_title,
+                    authors=score_authors,
                     isbn13=book.isbn13,
                     language=book.language,
                 )

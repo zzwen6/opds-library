@@ -20,6 +20,7 @@ from app.util import (
     should_skip_dir,
     sort_key,
 )
+from app.title_clean import clean_title, is_dirty_title
 
 
 @dataclass
@@ -137,14 +138,22 @@ def _attach_cover(session: Session, book: Book, data: bytes, mime: str | None, s
     return cover
 
 
+def _title_from_parsed(parsed_title: str | None, filename: str) -> tuple[str | None, str | None]:
+    """决定显示标题：内嵌标题干净就原样用；内嵌标题是「Kindle电子书:《三体》」这类脏标题时用清洗结果；
+    没有内嵌标题时从文件名提取。返回 (标题, 作者提示)。"""
+    if parsed_title:
+        if is_dirty_title(parsed_title):
+            hint = clean_title(parsed_title)
+            return normalize_space(hint.title) or parsed_title, normalize_space(hint.author)
+        return parsed_title, None
+    return parse_filename_hint(filename)
+
+
 def _fill_book_from_parsed(session: Session, book: Book, parsed, filename: str) -> None:
-    title = parsed.title
     authors = list(parsed.authors)
-    if not title:
-        hint_title, hint_author = parse_filename_hint(filename)
-        title = hint_title
-        if hint_author and not authors:
-            authors = [hint_author]
+    title, hint_author = _title_from_parsed(parsed.title, filename)
+    if hint_author and not authors:
+        authors = [hint_author]
     book.title = title or Path(filename).stem
     book.sort_title = sort_key(book.title)
     book.subtitle = parsed.subtitle or book.subtitle
@@ -283,7 +292,7 @@ def scan_library(session: Session, root: Path | None = None) -> ScanResult:
                 extracted_isbn=parsed.isbn13 or parsed.isbn10,
             )
             if book is None:
-                book = Book(title=parsed.title or path.stem, scrape_status="pending")
+                book = Book(title=_title_from_parsed(parsed.title, path.name)[0] or path.stem, scrape_status="pending")
                 session.add(book)
                 session.flush()
                 _fill_book_from_parsed(session, book, parsed, path.name)
@@ -316,7 +325,7 @@ def scan_library(session: Session, root: Path | None = None) -> ScanResult:
         book = current.book
         locked = {lock.field_name for lock in book.locks}
         if "title" not in locked and parsed.title:
-            book.title = parsed.title
+            book.title = _title_from_parsed(parsed.title, path.name)[0] or parsed.title
             book.sort_title = sort_key(book.title)
         if "isbn13" not in locked and parsed.isbn13:
             book.isbn13 = parsed.isbn13

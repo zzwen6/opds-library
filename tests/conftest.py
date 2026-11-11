@@ -157,3 +157,62 @@ def make_cbz(path: Path, title: str, series: str = "Test Series") -> Path:
         zf.writestr("ComicInfo.xml", xml)
         zf.writestr("page1.jpg", make_cover_bytes((20, 80, 60)))
     return path
+
+
+def make_mobi(path: Path, title: str, author: str) -> Path:
+    """生成一个能被 mobi/KindleUnpack 解开的最小 MOBI（PalmDB + MOBI 头 + EXTH，正文不压缩）。"""
+    import struct
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = f"<html><head></head><body><p>{title}</p><p>测试正文。</p></body></html>".encode()
+    title_b = title.encode()
+    exth_recs = [(100, author.encode()), (503, title_b)]
+    body = b"".join(struct.pack(">II", t, len(d) + 8) + d for t, d in exth_recs)
+    exth_len = 12 + len(body)
+    pad = (4 - exth_len % 4) % 4
+    exth = b"EXTH" + struct.pack(">II", exth_len + pad, len(exth_recs)) + body + b"\0" * pad
+    mobi_len = 0xE8
+    full_name_off = 16 + mobi_len + len(exth)
+    mh = bytearray(mobi_len)
+
+    def put(record_offset: int, value: int, fmt: str = ">I") -> None:
+        # record_offset 为相对 record 0 起点的偏移（含 16 字节 PalmDOC 头）
+        struct.pack_into(fmt, mh, record_offset - 16, value)
+
+    mh[0:4] = b"MOBI"
+    put(0x14, mobi_len)
+    put(0x18, 2)  # 书籍
+    put(0x1C, 65001)  # UTF-8
+    put(0x20, 12345)
+    put(0x24, 6)  # 文件版本
+    for off in range(0x28, 0x50, 4):
+        put(off, 0xFFFFFFFF)
+    put(0x50, 2)  # first non-book record
+    put(0x54, full_name_off)
+    put(0x58, len(title_b))
+    put(0x5C, 4)  # locale: zh
+    put(0x68, 6)
+    put(0x6C, 0xFFFFFFFF)  # 无图片
+    put(0x80, 0x40)  # 有 EXTH
+    put(0xA8, 0xFFFFFFFF)  # 无 DRM
+    put(0xC0, 1, ">H")
+    put(0xC2, 1, ">H")
+    put(0xC4, 1)
+    put(0xC8, 0xFFFFFFFF)  # FCIS
+    put(0xD0, 0xFFFFFFFF)  # FLIS
+    put(0xF2, 0, ">H")  # extra data flags
+    put(0xF4, 0xFFFFFFFF)  # 无 NCX 索引
+    palmdoc = struct.pack(">HHIHHHH", 1, 0, len(text), 1, 4096, 0, 0)
+    rec0 = palmdoc + bytes(mh) + exth + title_b + b"\0" * (8 - len(title_b) % 4)
+    records = [rec0, text, b"\xe9\x8e\r\n"]
+    n = len(records)
+    hdr = b"test".ljust(32, b"\0") + struct.pack(
+        ">HHIIIIII4s4sIIH", 0, 0, 0, 0, 0, 0, 0, 0, b"BOOK", b"MOBI", n, 0, n
+    )
+    offset = 78 + 8 * n + 2
+    reclist = b""
+    for i, rec in enumerate(records):
+        reclist += struct.pack(">II", offset, i * 2)
+        offset += len(rec)
+    path.write_bytes(hdr + reclist + b"\0\0" + b"".join(records))
+    return path

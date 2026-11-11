@@ -314,8 +314,8 @@ def test_multi_format_and_identical_copies(client, auth, env):
     shutil.copy(lib / "huozhe.epub", lib / "copy" / "huozhe.epub")
     _scan(env)
     with SessionLocal() as s:
-        epub_uuid = s.query(Book).filter(Book.title == "《活着》").one().uuid
-        pdf_uuid = s.query(Book).filter(Book.title.like("%精校版%")).one().uuid
+        epub_uuid = s.query(BookFile).filter(BookFile.rel_path == "huozhe.epub").one().book.uuid
+        pdf_uuid = s.query(BookFile).filter(BookFile.rel_path == "huozhe.pdf").one().book.uuid
     res = client.post("/api/duplicates/merge", json={"primary_uuid": epub_uuid, "other_uuids": [pdf_uuid]}, auth=auth)
     assert res.status_code == 200, res.text
 

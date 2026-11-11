@@ -1,11 +1,11 @@
 # 本文件只使用现成镜像，不在 Compose 里构建。先在本地构建好两个镜像：
-#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.1 .
+#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.2 .
 #   docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 # 然后 cp .env.example .env，改好 AUTH_PASSWORD 和路径，执行：
 #   docker compose up -d
 services:
   opds-library:
-    image: ${OPDS_IMAGE:-opds-library:0.5.1}
+    image: ${OPDS_IMAGE:-opds-library:0.5.2}
     # 以非 root 运行；UID/GID 需对 /data（以及启用整理时的 /library）有写权限，见 README
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:

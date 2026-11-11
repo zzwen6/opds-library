@@ -12,19 +12,17 @@ def parse_mobi(path: Path) -> ParsedBook:
     """尽最大努力解析 MOBI/AZW3。失败时返回空结果，不抛给扫描循环。"""
     parsed = ParsedBook()
     try:
-        import mobi
+        from mobi.kindleunpack import unpackBook
     except Exception:
         return parsed
 
-    tmp = tempfile.mkdtemp(prefix="mobi-")
+    # 0.5.1 及之前调用 mobi.extract(path, tmp) 多传了一个参数，抛 TypeError 后被吞掉，
+    # 导致 MOBI/AZW3 的内嵌元数据从未被读取。这里直接调 KindleUnpack 解到自己的临时目录，
+    # 解析失败时也能清理干净（mobi.extract 失败时会遗留 /tmp/mobiex*）。
+    tmp = tempfile.mkdtemp(prefix="opds-mobi-")
     try:
-        extracted = mobi.extract(str(path), tmp)
-        # mobi.extract 返回 (tempdir, filepath) 或类似结构，版本间有差异
+        unpackBook(str(path), tmp, epubver="A")
         root = Path(tmp)
-        if isinstance(extracted, (tuple, list)) and extracted:
-            maybe = Path(extracted[0] if not str(extracted[0]).endswith((".epub", ".html")) else extracted[-1])
-            if maybe.exists():
-                root = maybe if maybe.is_dir() else maybe.parent
         # 若解出 EPUB，复用 EPUB 解析
         epubs = list(root.rglob("*.epub"))
         if epubs:

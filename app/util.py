@@ -96,22 +96,16 @@ def find_isbn(text: str | None) -> tuple[str | None, str | None]:
 
 
 def parse_filename_hint(filename: str) -> tuple[str | None, str | None]:
-    """从「作者 - 书名」或「书名 - 作者」一类文件名里猜标题和作者（低置信度）。"""
+    """从文件名猜标题和作者（低置信度）。
+
+    处理「作者 - 书名」「书名 - 作者」「书名_作者」、《书名》、来源/营销前后缀（Kindle电子书:、精校版…）、
+    各类括注与 ISBN，详见 app.title_clean。
+    """
+    from app.title_clean import clean_title
+
     stem = Path(filename).stem
-    stem = re.sub(r"[\[\(].*?[\]\)]", " ", stem)
-    isbn13, _ = find_isbn(stem)
-    if isbn13:
-        stem = re.sub(re.escape(isbn13), " ", stem)
-    stem = normalize_space(stem) or ""
-    if " - " in stem:
-        left, right = stem.split(" - ", 1)
-        left, right = normalize_space(left), normalize_space(right)
-        # 启发式：较短的一侧更像作者
-        if left and right:
-            if len(left) <= len(right):
-                return right, left
-            return left, right
-    return normalize_space(stem), None
+    hint = clean_title(stem)
+    return normalize_space(hint.title), normalize_space(hint.author)
 
 
 def should_skip_dir(name: str) -> bool:

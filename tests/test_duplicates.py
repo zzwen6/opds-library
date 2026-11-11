@@ -21,6 +21,11 @@ def _uuid(title):
         return s.query(Book).filter(Book.title == title).one().uuid
 
 
+def _uuid_by_file(filename):
+    with SessionLocal() as s:
+        return s.query(BookFile).filter(BookFile.filename == filename).one().book.uuid
+
+
 def test_title_key_handles_chinese_punctuation():
     assert title_key("《活着》") == title_key("活着")
     assert title_key("活着（精校版）") == title_key("活着")
@@ -82,8 +87,8 @@ def test_fuzzy_match_and_merge_formats_then_undo(client, auth, env):
     assert len(fuzzy) == 1
     g = fuzzy[0]
     assert len(g["books"]) == 2 and 50 <= g["confidence"] < 95
-    epub_uuid = _uuid("《活着》")
-    pdf_uuid = _uuid("活着(精校版)")
+    epub_uuid = _uuid_by_file("huozhe.epub")
+    pdf_uuid = _uuid_by_file("huozhe.pdf")
 
     # 主书目锁定标题；被并入的书锁定了出版社 → 应带过来并保持锁定
     with SessionLocal() as s:
@@ -106,7 +111,8 @@ def test_fuzzy_match_and_merge_formats_then_undo(client, auth, env):
     assert res["formats"] == ["epub", "pdf"]
     assert client.get(f"/api/books/{pdf_uuid}", auth=auth).status_code == 404
     d = client.get(f"/api/books/{epub_uuid}", auth=auth).json()
-    assert d["title"] == "《活着》" and d["publisher"] == "作家出版社"
+    # 扫描时「《活着》」这类脏内嵌标题会被清洗成「活着」
+    assert d["title"] == "活着" and d["publisher"] == "作家出版社"
     assert {f["format"] for f in d["files"]} == {"epub", "pdf"}
     assert "publisher" in {l["field_name"] for l in d["locks"]}
     assert (lib / "huozhe.pdf").exists() and (lib / "huozhe.epub").exists()
