@@ -112,7 +112,7 @@ echo 'DOUBAN_API_URL=http://douban-book-api:3000' >> .env
 docker compose --profile douban up --build -d
 ```
 
-中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签目前常为空；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
+中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签取自页面里的「豆瓣成员常用标签」（需 douban-book-api 含 2026-11-11 的标签修复），通常有 5–10 个，作为候选标签参与写入；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
 
 ## 整理书库文件（默认关闭）
 

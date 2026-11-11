@@ -215,3 +215,11 @@ def test_higher_score_still_wins_over_priority():
     db = Candidate(source="douban", confidence=95)
     ranked = sort_candidates([ol, db], book)
     assert ranked[0].source == "douban"
+
+
+def test_candidate_maps_douban_labels_to_tags():
+    """douban-book-api（≥ 标签修复版）从页面 criteria 解析出常用标签，映射为候选 tags。"""
+    data = dict(HUOZHE_DETAIL)
+    data["labels"] = ["余华", "人性", "", "中国文学", "小说"]
+    cand = candidate_from_detail(data)
+    assert cand.tags == ["余华", "人性", "中国文学", "小说"]
