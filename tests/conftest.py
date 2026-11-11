@@ -24,6 +24,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_USERNAME", "admin")
     monkeypatch.setenv("AUTH_PASSWORD", "secret")
     monkeypatch.setenv("PAGE_SIZE", "2")
+    monkeypatch.setenv("WATCH_ENABLED", "false")
+    monkeypatch.setenv("ORGANIZE_ENABLED", "false")
     reset_settings_cache()
     from app.config import get_settings
 
