@@ -1,11 +1,18 @@
-# 本文件只使用现成镜像，不在 Compose 里构建。先在本地构建好两个镜像：
-#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.2 .
+# 本文件只使用现成镜像，不在 Compose 里构建。
+#
+# 推荐：推送到 GitHub 后由 Actions 构建并推到 GHCR，NAS 上 Watchtower
+# 收到 webhook 后自动拉取并重建容器。一次性配置见 docs/DEPLOY.md。
+#
+# 也可以在本地构建后覆盖镜像名：
+#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.3 .
 #   docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
-# 然后 cp .env.example .env，改好 AUTH_PASSWORD 和路径，执行：
+#   在 .env 里设 OPDS_IMAGE=opds-library:0.5.3 和 DOUBAN_IMAGE=douban-book-api:zzwen6
+#
+# 然后 cp .env.example .env，改好 AUTH_PASSWORD、路径和 DEPLOY_WEBHOOK_TOKEN，执行：
 #   docker compose up -d
 services:
   opds-library:
-    image: ${OPDS_IMAGE:-opds-library:0.5.2}
+    image: ${OPDS_IMAGE:-ghcr.io/zzwen6/opds-library:latest}
     # 以非 root 运行；UID/GID 需对 /data（以及启用整理时的 /library）有写权限，见 README
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:
@@ -34,16 +41,18 @@ services:
       #   - ${LIBRARY_HOST_PATH:-./library}:/library
       - ${LIBRARY_HOST_PATH:-./library}:/library:ro
       - ${DATA_HOST_PATH:-./data}:/data
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     depends_on:
       douban-book-api:
         condition: service_started
     restart: unless-stopped
 
-  # 中文刮削用的 douban-book-api（镜像需事先构建，见文件开头）。
+  # 中文刮削用的 douban-book-api（默认拉 GHCR 镜像，见文件开头）。
   # 不需要豆瓣源时：.env 里设 DOUBAN_ENABLED=false，
   # 并用 docker compose up -d --no-deps opds-library 只启动书库。
   douban-book-api:
-    image: ${DOUBAN_IMAGE:-douban-book-api:zzwen6}
+    image: ${DOUBAN_IMAGE:-ghcr.io/zzwen6/douban-book-api:latest}
     # 默认只在 Compose 内部网络可见；需要从宿主机调试时取消注释
     # ports:
     #   - "3000:3000"
@@ -52,10 +61,36 @@ services:
       CACHE_DIR: /cache
     volumes:
       - ${DOUBAN_CACHE_HOST_PATH:-./douban-cache}:/cache
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/ping"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+    restart: unless-stopped
+
+  # 收到 GitHub Actions 的 HTTPS webhook 后，只更新带 enable 标签的两个服务。
+  # 自身不更新。完整配置见 docs/DEPLOY.md。
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Watchtower 从容器内的 /config.json 读取 GHCR 登录信息（不是宿主机的 $HOME）。
+      # 群晖 Container Manager 通常对应 /root/.docker/config.json，见 docs/DEPLOY.md。
+      - ${DOCKER_CONFIG_JSON:-/root/.docker/config.json}:/config.json:ro
+    environment:
+      WATCHTOWER_HTTP_API_UPDATE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: ${DEPLOY_WEBHOOK_TOKEN}
+      WATCHTOWER_HTTP_API_PERIODIC_POLLS: "false"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_TIMEOUT: 30s
+    # 只绑在回环上，局域网/公网访问不到。Cloudflare Tunnel 在同一台 NAS 上再转到这里。
+    # 若 cloudflared 也跑在本 Compose 网络里，可改为指向 http://watchtower:8080，并删掉下面的 ports。
+    ports:
+      - "127.0.0.1:8081:8080"
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
     restart: unless-stopped

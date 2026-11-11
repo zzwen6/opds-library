@@ -15,25 +15,34 @@
 
 ## 快速开始（Docker）
 
+推荐直接使用 GitHub Container Registry 上的镜像，并配置「推送到 GitHub 后立刻部署」，完整步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+
 ```bash
 cp .env.example .env
 # 编辑 .env：
-#   AUTH_PASSWORD      必须改成你自己的密码
-#   LIBRARY_HOST_PATH  NAS 上的书库目录，如 /volume1/books
-#   DATA_HOST_PATH     数据目录（数据库、封面），如 ./data
-#   PUID / PGID        运行容器的用户，见下方「NAS 权限」
+#   AUTH_PASSWORD          必须改成你自己的密码
+#   LIBRARY_HOST_PATH      NAS 上的书库目录，如 /volume1/books
+#   DATA_HOST_PATH         数据目录（数据库、封面），如 ./data
+#   PUID / PGID            运行容器的用户，见下方「NAS 权限」
+#   DEPLOY_WEBHOOK_TOKEN   自动部署用的长随机令牌（见 docs/DEPLOY.md）
+# 首次从私有 GHCR 拉镜像前，先在 NAS 上 docker login ghcr.io，见 docs/DEPLOY.md
 mkdir -p data douban-cache    # 先建好数据目录，避免被 Docker 以 root 身份自动创建
-
-# Compose 只使用现成镜像，不负责构建。先在本地构建两个镜像（PUID/PGID 与 .env 保持一致）：
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.2 .
-docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
-# Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
-# 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
 
 docker compose up -d
 ```
 
-镜像名可在 `.env` 里用 `OPDS_IMAGE`、`DOUBAN_IMAGE` 覆盖（例如推到私有仓库后的完整镜像名）。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。更新时重新构建镜像，再 `docker compose up -d` 即可。
+默认镜像是 `ghcr.io/zzwen6/opds-library:latest` 和 `ghcr.io/zzwen6/douban-book-api:latest`，可在 `.env` 里用 `OPDS_IMAGE`、`DOUBAN_IMAGE` 覆盖。
+
+也可以不走 GHCR，在本地构建：
+
+```bash
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.3 .
+docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
+# Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
+# 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
+```
+
+然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.3` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
 
 Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 
@@ -147,7 +156,7 @@ alembic upgrade head
 
 本地开发时，先在另一进程启动该服务（默认 `http://127.0.0.1:3000`），再启动本项目。服务不可达时会跳过豆瓣，不影响 Open Library / Google Books。
 
-Docker 部署时，`docker-compose.yml` 默认一起启动该服务（使用事先构建好的 `douban-book-api:zzwen6` 镜像，缓存写在 `DOUBAN_CACHE_HOST_PATH`，默认 `./douban-cache`）。服务只在 Compose 内部网络可见；需要从宿主机调试时，取消 compose 里 `ports: 3000:3000` 的注释。不需要豆瓣源时，在 `.env` 里设 `DOUBAN_ENABLED=false`，并用 `docker compose up -d --no-deps opds-library` 只启动书库。
+Docker 部署时，`docker-compose.yml` 默认一起启动该服务（默认使用 `ghcr.io/zzwen6/douban-book-api:latest`，也可在 `.env` 里用 `DOUBAN_IMAGE` 改成本地镜像；缓存写在 `DOUBAN_CACHE_HOST_PATH`，默认 `./douban-cache`）。服务只在 Compose 内部网络可见；需要从宿主机调试时，取消 compose 里 `ports: 3000:3000` 的注释。不需要豆瓣源时，在 `.env` 里设 `DOUBAN_ENABLED=false`，并用 `docker compose up -d --no-deps opds-library` 只启动书库。
 
 中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签取自页面里的「豆瓣成员常用标签」（需 douban-book-api 含 2026-11-11 的标签修复），通常有 5–10 个，作为候选标签参与写入；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
 
@@ -281,6 +290,10 @@ API：`GET /api/duplicates[?include_ignored=true]`、`POST /api/duplicates/ignor
 - 中文书元数据：通过独立的 douban-book-api 接入豆瓣（不在本进程抓网页）。也可继续只用 Open Library。对比与风险见 `docs/CHINESE_SOURCES.md`。
 - Web 与 OPDS 共用一个 HTTP Basic 账号，不同步阅读进度。
 - 批量编辑、作者归并、合并重复书全部只改数据库，每批可撤销；任何操作都不会删除书库中的文件。
+
+## 推送到 GitHub 后立刻部署
+
+镜像由 GitHub Actions 构建并推到 GHCR（`ghcr.io/zzwen6/opds-library`、`ghcr.io/zzwen6/douban-book-api`），NAS 上的 Watchtower 经 Cloudflare Tunnel 收到 webhook 后拉取 `:latest` 并重建容器。一次性配置（GHCR 登录、仓库 Secrets、Tunnel ingress、令牌轮换）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 备份
 
