@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, or_, select
@@ -122,6 +123,10 @@ def book_to_detail(book: Book) -> BookDetail:
             for lock in book.locks
         ],
         covers=covers,
+        field_sources=json.loads(book.field_sources_json or "{}"),
+        can_undo_auto=any(
+            r.status == "auto_applied" and r.applied_mode == "auto" for r in book.scrape_records
+        ),
     )
 
 
@@ -135,6 +140,7 @@ def book_query_options():
         selectinload(Book.publisher),
         selectinload(Book.series),
         selectinload(Book.primary_cover),
+        selectinload(Book.scrape_records),
     )
 
 

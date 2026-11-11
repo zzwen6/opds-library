@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,18 +11,35 @@ from app import __version__
 from app.api import api_router
 from app.auth import require_basic  # noqa: F401
 from app.config import get_settings
-from app.db import Base, engine, ensure_data_dirs
+from app.db import ensure_data_dirs, upgrade_schema
 from app.opds.routes import router as opds_router
+from app.scan.watcher import start_watcher, stop_watcher
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
 
-def create_app() -> FastAPI:
-    settings = get_settings()
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     ensure_data_dirs()
-    Base.metadata.create_all(bind=engine)
+    upgrade_schema()
+    start_watcher()
+    try:
+        yield
+    finally:
+        stop_watcher()
 
-    app = FastAPI(title="OPDS Library", version=__version__, docs_url="/api/docs", redoc_url=None)
+
+def create_app() -> FastAPI:
+    ensure_data_dirs()
+    upgrade_schema()
+
+    app = FastAPI(
+        title="OPDS Library",
+        version=__version__,
+        docs_url="/api/docs",
+        redoc_url=None,
+        lifespan=lifespan,
+    )
 
     @app.get("/api/health")
     def health():

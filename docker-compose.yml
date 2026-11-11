@@ -1,7 +1,7 @@
 services:
   opds-library:
     build: .
-    image: opds-library:0.1.0
+    image: opds-library:0.2.0
     ports:
       - "8080:8080"
     environment:
@@ -11,8 +11,15 @@ services:
       DATA_PATH: /data
       GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
       PAGE_SIZE: ${PAGE_SIZE:-50}
+      SCRAPE_AUTO_THRESHOLD: ${SCRAPE_AUTO_THRESHOLD:-90}
+      ORGANIZE_ENABLED: ${ORGANIZE_ENABLED:-false}
+      ORGANIZE_TEMPLATE: ${ORGANIZE_TEMPLATE:-"{author}/{series}/{title}.{ext}"}
+      WATCH_ENABLED: ${WATCH_ENABLED:-true}
+      WATCH_POLL_SECONDS: ${WATCH_POLL_SECONDS:-300}
     volumes:
-      # 书库默认只读挂载，服务不会写回原文件
+      # 书库默认只读挂载，服务不会写回原文件内容。
+      # 若要启用整理/改名（ORGANIZE_ENABLED=true），把下一行的 :ro 去掉，改为：
+      #   - ${LIBRARY_HOST_PATH:-./library}:/library
       - ${LIBRARY_HOST_PATH:-./library}:/library:ro
       - ${DATA_HOST_PATH:-./data}:/data
     restart: unless-stopped

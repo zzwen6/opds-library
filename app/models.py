@@ -48,6 +48,7 @@ class Book(Base):
     rating: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     cover_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 不建 FK，避免与 covers.book_id 循环引用
     scrape_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    field_sources_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
@@ -200,6 +201,8 @@ class ScrapeRecord(Base):
     confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     raw_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     fields_applied_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    previous_values_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    applied_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="candidate")
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -235,3 +238,33 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrganizeBatch(Base):
+    __tablename__ = "organize_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), default="applied", index=True)
+    template: Mapped[str] = mapped_column(String(512))
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    rolled_back_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    moves: Mapped[list["OrganizeMove"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
+
+
+class OrganizeMove(Base):
+    __tablename__ = "organize_moves"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("organize_batches.id"), index=True)
+    file_id: Mapped[Optional[int]] = mapped_column(ForeignKey("book_files.id"), nullable=True)
+    from_path: Mapped[str] = mapped_column(String(2048))
+    to_path: Mapped[str] = mapped_column(String(2048))
+    status: Mapped[str] = mapped_column(String(32), default="moved")
+    note: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
+    batch: Mapped[OrganizeBatch] = relationship(back_populates="moves")
+

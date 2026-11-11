@@ -23,13 +23,24 @@ class Settings(BaseSettings):
     log_level: str = "info"
     user_agent: str = "opds-library/0.1 (self-hosted; https://localhost)"
 
+    # 刮削：达到阈值或 ISBN 精确命中时自动写入未锁定字段
+    scrape_auto_threshold: float = 90.0
+
+    # 整理改名：默认关闭。开启前需把书库目录改为可写挂载。
+    organize_enabled: bool = False
+    organize_template: str = "{author}/{series}/{title}.{ext}"
+
+    # 文件监听：inotify + 定时轮询兜底
+    watch_enabled: bool = True
+    watch_poll_seconds: int = 300
+    watch_debounce_seconds: float = 2.0
+
     @property
     def database_path(self) -> Path:
         return self.data_path / "library.db"
 
     @property
     def database_url(self) -> str:
-        # 四个斜杠：绝对路径 SQLite
         return f"sqlite:///{self.database_path.resolve()}"
 
     @property

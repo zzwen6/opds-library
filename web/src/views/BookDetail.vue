@@ -14,7 +14,9 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <button class="btn" @click="save" :disabled="saving">保存并锁定已改字段</button>
           <button class="btn secondary" @click="doScrape" :disabled="scraping">刮削候选</button>
+          <button v-if="book.can_undo_auto" class="btn ghost" @click="undoAuto" :disabled="saving">撤销自动写入</button>
         </div>
+        <p v-if="book.scrape_status === 'auto_applied'" class="muted">最近一次高分/ISBN 命中已自动写入未锁定字段，可撤销一次。</p>
         <p v-if="message" class="muted">{{ message }}</p>
         <p v-if="error" class="error">{{ error }}</p>
         <div class="form-grid">
@@ -66,12 +68,13 @@
         <h3 style="margin-top:24px">文件</h3>
         <ul>
           <li v-for="f in book.files" :key="f.id">
-            {{ f.filename }} · {{ f.format }} · {{ (f.size_bytes/1024).toFixed(0) }} KB
+            {{ f.rel_path || f.filename }} · {{ f.format }} · {{ (f.size_bytes/1024).toFixed(0) }} KB
             <span v-if="f.missing" class="error">缺失</span>
           </li>
         </ul>
+        <p v-if="sourceHint" class="muted">字段来源：{{ sourceHint }}</p>
         <div v-if="candidates.length" class="queue-item" style="margin-top:20px">
-          <h3>刮削候选（确认后写入，已锁定字段不会被覆盖）</h3>
+          <h3>刮削候选（已锁定字段不会被覆盖；低于阈值的需手动确认）</h3>
           <div class="candidates">
             <div class="candidate" v-for="c in candidates" :key="c.record_id">
               <h4>{{ c.title }}</h4>
@@ -99,6 +102,7 @@ const scraping = ref(false);
 const message = ref("");
 const error = ref("");
 const candidates = ref<any[]>([]);
+const sourceHint = ref("");
 
 function locked(name: string) {
   return (book.value?.locks || []).some((l: any) => l.field_name === name);
@@ -106,6 +110,7 @@ function locked(name: string) {
 
 function applyBook(data: any) {
   book.value = data;
+  refreshSourceHint(data);
   Object.assign(form, {
     title: data.title || "",
     subtitle: data.subtitle || "",
@@ -165,17 +170,42 @@ async function toggle(field: string) {
   applyBook(data);
 }
 
+function refreshSourceHint(data: any) {
+  const src = data?.field_sources || {};
+  const parts = Object.entries(src).map(([k, v]) => `${k}←${v}`);
+  sourceHint.value = parts.join("，");
+}
+
 async function doScrape() {
   scraping.value = true;
   error.value = "";
+  message.value = "";
   try {
     const data = await api(`/api/books/${route.params.uuid}/scrape`, { method: "POST" });
     candidates.value = data.candidates || [];
-    if (!candidates.value.length) message.value = "没有找到候选，可先补全 ISBN 或标题后再试。";
+    if (data.book) applyBook(data.book);
+    if (data.auto_applied) {
+      message.value = "已按高分或 ISBN 精确命中自动写入未锁定字段，可点击「撤销自动写入」。";
+    } else if (!candidates.value.length) {
+      message.value = "没有找到候选，可先补全 ISBN 或标题后再试。";
+    } else {
+      message.value = "已得到候选，分数未达自动写入阈值，请确认后写入。";
+    }
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
     scraping.value = false;
+  }
+}
+
+async function undoAuto() {
+  error.value = "";
+  try {
+    const data = await api(`/api/books/${route.params.uuid}/scrape/undo`, { method: "POST" });
+    applyBook(data);
+    message.value = "已撤销最近一次自动写入，字段已恢复为写入前的值。";
+  } catch (err) {
+    error.value = (err as Error).message;
   }
 }
 

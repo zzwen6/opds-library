@@ -134,7 +134,12 @@ def scrape_book(session: Session, book: Book) -> list[CandidateOut]:
         unique.append(cand)
 
     records = [_persist(session, book, cand) for cand in unique]
-    book.scrape_status = "needs_review" if records else "failed"
+    if records and _should_auto_apply(unique[0], book):
+        apply_candidate(session, book, records[0].id, mode="auto")
+    elif records:
+        book.scrape_status = "needs_review"
+    else:
+        book.scrape_status = "failed"
     book.updated_at = datetime.now(timezone.utc)
     session.flush()
     return [_candidate_to_out(record, cand) for record, cand in zip(records, unique)]
@@ -195,7 +200,45 @@ def _apply_cover_from_url(session: Session, book: Book, url: str, source: str) -
     return cover
 
 
-def confirm_candidate(session: Session, book: Book, record_id: int) -> Book:
+
+FIELD_MAP = {
+    "title": "title",
+    "subtitle": "subtitle",
+    "isbn13": "isbn13",
+    "language": "language",
+    "description": "description",
+    "published_date": "published_date",
+    "authors": "authors",
+    "publisher": "publisher",
+    "series": "series",
+    "tags": "tags",
+}
+
+
+def current_field_values(book: Book) -> dict:
+    return {
+        "title": book.title,
+        "subtitle": book.subtitle,
+        "isbn13": book.isbn13,
+        "language": book.language,
+        "description": book.description,
+        "published_date": book.published_date,
+        "authors": [ba.author.name for ba in sorted(book.authors, key=lambda x: x.position) if ba.author],
+        "publisher": book.publisher.name if book.publisher else None,
+        "series": book.series.name if book.series else None,
+        "tags": [bt.tag.name for bt in book.tags if bt.tag],
+        "cover_id": book.cover_id,
+        "field_sources": json.loads(book.field_sources_json or "{}"),
+    }
+
+
+def _should_auto_apply(candidate: Candidate, book: Book) -> bool:
+    settings = get_settings()
+    isbn_exact = bool(book.isbn13 and candidate.isbn13 and book.isbn13 == candidate.isbn13)
+    return isbn_exact or (candidate.confidence or 0) >= settings.scrape_auto_threshold
+
+
+def apply_candidate(session: Session, book: Book, record_id: int, mode: str = "manual") -> Book:
     record = session.scalar(
         select(ScrapeRecord).where(ScrapeRecord.id == record_id, ScrapeRecord.book_id == book.id)
     )
@@ -203,21 +246,10 @@ def confirm_candidate(session: Session, book: Book, record_id: int) -> Book:
         raise ValueError("找不到该候选")
     data = json.loads(record.raw_json or "{}")
     locked = locked_fields(book)
+    previous = current_field_values(book)
     payload: dict = {}
-    mapping = {
-        "title": "title",
-        "subtitle": "subtitle",
-        "isbn13": "isbn13",
-        "language": "language",
-        "description": "description",
-        "published_date": "published_date",
-        "authors": "authors",
-        "publisher": "publisher",
-        "series": "series",
-        "tags": "tags",
-    }
-    applied = []
-    for src, dest in mapping.items():
+    applied: list[str] = []
+    for src, dest in FIELD_MAP.items():
         if dest in locked:
             continue
         value = data.get(src)
@@ -228,19 +260,134 @@ def confirm_candidate(session: Session, book: Book, record_id: int) -> Book:
 
     if payload:
         update_book(session, book, BookUpdate(**payload), auto_lock=False)
+        book = session.merge(book)
 
     if data.get("cover_url") and "cover" not in locked:
         if _apply_cover_from_url(session, book, data["cover_url"], record.source):
             applied.append("cover")
 
-    record.status = "applied"
-    record.fields_applied_json = json.dumps(applied, ensure_ascii=False)
-    for other in book.scrape_records:
-        if other.id != record.id and other.status == "candidate":
-            other.status = "rejected"
-    book.scrape_status = "confirmed"
-    book.updated_at = datetime.now(timezone.utc)
-    session.flush()
     from app.services.books import get_book_by_uuid
 
+    book = get_book_by_uuid(session, book.uuid) or book
+    current = current_field_values(book)
+    changes = {}
+    for field in applied:
+        if field == "cover":
+            changes["cover"] = {
+                "old": previous.get("cover_id"),
+                "new": current.get("cover_id"),
+                "source": record.source,
+            }
+        else:
+            changes[field] = {
+                "old": previous.get(field),
+                "new": current.get(field),
+                "source": record.source,
+            }
+
+    record.fields_applied_json = json.dumps(applied, ensure_ascii=False)
+    record.applied_mode = mode
+    if mode == "auto":
+        record.previous_values_json = json.dumps(
+            {"previous": previous, "changes": changes},
+            ensure_ascii=False,
+        )
+        record.status = "auto_applied"
+        book.scrape_status = "auto_applied" if applied else "needs_review"
+        if not applied:
+            record.status = "candidate"
+    else:
+        record.status = "applied"
+        book.scrape_status = "confirmed"
+
+    if applied:
+        sources = dict(previous.get("field_sources") or {})
+        for field in applied:
+            sources[field] = record.source
+        book.field_sources_json = json.dumps(sources, ensure_ascii=False)
+        for other in book.scrape_records:
+            if other.id != record.id and other.status == "candidate":
+                other.status = "rejected"
+
+    book.updated_at = datetime.now(timezone.utc)
+    session.flush()
     return get_book_by_uuid(session, book.uuid) or book
+
+
+def confirm_candidate(session: Session, book: Book, record_id: int) -> Book:
+    return apply_candidate(session, book, record_id, mode="manual")
+
+
+def latest_auto_record(book: Book) -> ScrapeRecord | None:
+    records = [r for r in book.scrape_records if r.status == "auto_applied" and r.applied_mode == "auto"]
+    records.sort(key=lambda r: r.fetched_at or r.id, reverse=True)
+    return records[0] if records else None
+
+
+def undo_auto_apply(session: Session, book: Book) -> Book:
+    from app.services.books import get_book_by_uuid
+    from app.models import Cover
+
+    record = latest_auto_record(book)
+    if record is None or not record.previous_values_json:
+        raise ValueError("没有可撤销的自动写入")
+    payload = json.loads(record.previous_values_json)
+    previous = payload.get("previous") or {}
+    changes = payload.get("changes") or {}
+    restore: dict = {}
+    for field in changes:
+        if field == "cover":
+            continue
+        restore[field] = previous.get(field)
+    if restore:
+        # 空列表/空字符串也要还原
+        update_book(session, book, BookUpdate(**{k: v for k, v in restore.items()}), auto_lock=False)
+        book = get_book_by_uuid(session, book.uuid) or book
+    if "cover" in changes:
+        old_id = previous.get("cover_id")
+        book.cover_id = old_id
+        for cover in book.covers:
+            cover.is_primary = bool(old_id and cover.id == old_id)
+    sources = dict(previous.get("field_sources") or {})
+    book.field_sources_json = json.dumps(sources, ensure_ascii=False) if sources else None
+    record.status = "auto_undone"
+    # 仍保留候选供再次确认
+    others = [r for r in book.scrape_records if r.id != record.id and r.status in {"rejected", "candidate"}]
+    for other in others:
+        if other.status == "rejected":
+            other.status = "candidate"
+    book.scrape_status = "needs_review" if others or True else "pending"
+    book.updated_at = datetime.now(timezone.utc)
+    session.flush()
+    return get_book_by_uuid(session, book.uuid) or book
+
+
+def pending_books_for_batch(session: Session) -> list[Book]:
+    from app.services.books import book_query_options
+
+    return list(
+        session.scalars(
+            select(Book).options(*book_query_options()).where(Book.scrape_status == "pending")
+        ).unique().all()
+    )
+
+
+def scrape_pending_books(session: Session) -> dict:
+    books = pending_books_for_batch(session)
+    result = {"total": len(books), "auto_applied": 0, "needs_review": 0, "failed": 0, "errors": []}
+    for book in books:
+        try:
+            scrape_book(session, book)
+            session.flush()
+            if book.scrape_status == "auto_applied":
+                result["auto_applied"] += 1
+            elif book.scrape_status == "needs_review":
+                result["needs_review"] += 1
+            else:
+                result["failed"] += 1
+        except Exception as exc:
+            result["failed"] += 1
+            result["errors"].append(f"{book.uuid}: {exc}")
+            logger.warning("批量刮削失败 %s: %s", book.uuid, exc)
+    session.flush()
+    return result

@@ -98,6 +98,8 @@ class BookDetail(BookListItem):
     files: list[FileOut] = Field(default_factory=list)
     locks: list[FieldLockOut] = Field(default_factory=list)
     covers: list[CoverOut] = Field(default_factory=list)
+    field_sources: dict[str, str] = Field(default_factory=dict)
+    can_undo_auto: bool = False
 
 
 class BookUpdate(BaseModel):

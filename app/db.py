@@ -65,3 +65,34 @@ def ensure_data_dirs() -> None:
 def check_wal(session: Session) -> str:
     mode = session.execute(text("PRAGMA journal_mode")).scalar_one()
     return str(mode)
+
+
+def upgrade_schema(bind=None) -> None:
+    """为已有 SQLite 库补齐新增列和表（create_all 不会改旧表结构）。"""
+    from sqlalchemy import text as sql_text
+
+    import app.models  # noqa: F401  确保表已注册到 Base.metadata
+
+    bind = bind or engine
+    Base.metadata.create_all(bind=bind)
+    additions = {
+        "books": [
+            "ALTER TABLE books ADD COLUMN field_sources_json TEXT",
+        ],
+        "scrape_records": [
+            "ALTER TABLE scrape_records ADD COLUMN previous_values_json TEXT",
+            "ALTER TABLE scrape_records ADD COLUMN applied_mode VARCHAR(32)",
+        ],
+    }
+    with bind.connect() as conn:
+        for table, stmts in additions.items():
+            existing = {
+                row[1]
+                for row in conn.execute(sql_text(f"PRAGMA table_info({table})")).fetchall()
+            }
+            for stmt in stmts:
+                col = stmt.rsplit(" ", 2)[0].split()[-1] if False else stmt.split("ADD COLUMN ", 1)[1].split()[0]
+                if col in existing:
+                    continue
+                conn.execute(sql_text(stmt))
+        conn.commit()

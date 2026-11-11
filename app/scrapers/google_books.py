@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from typing import Any
 
 import httpx
@@ -7,6 +10,11 @@ import httpx
 from app.config import get_settings
 from app.scrapers.base import Candidate, Scraper, register
 from app.util import normalize_isbn, normalize_space
+
+logger = logging.getLogger(__name__)
+
+_backoff_until = 0.0
+_backoff_lock = threading.Lock()
 
 
 def _client() -> httpx.Client:
@@ -56,11 +64,25 @@ def _from_volume(item: dict[str, Any]) -> Candidate:
     )
 
 
+def _enter_backoff(seconds: float) -> None:
+    global _backoff_until
+    seconds = min(max(seconds, 15), 300)
+    with _backoff_lock:
+        _backoff_until = max(_backoff_until, time.time() + seconds)
+    logger.warning("Google Books 返回 429，退避 %.0f 秒，不影响其他刮削源", seconds)
+
+
+def reset_backoff() -> None:
+    global _backoff_until
+    with _backoff_lock:
+        _backoff_until = 0.0
+
+
 @register
 class GoogleBooksScraper(Scraper):
     id = "google_books"
     display_name = "Google Books"
-    requires_api_key = False  # 无 key 时仍尝试公开查询；有 key 更稳定
+    requires_api_key = False
 
     def _params(self, extra: dict) -> dict:
         settings = get_settings()
@@ -81,12 +103,30 @@ class GoogleBooksScraper(Scraper):
         return self._search_q(" ".join(parts), lang=language)
 
     def _search_q(self, q: str, lang: str | None = None) -> list[Candidate]:
+        with _backoff_lock:
+            remaining = _backoff_until - time.time()
+        if remaining > 0:
+            logger.info("Google Books 仍在退避中（剩余 %.0fs），跳过本次请求", remaining)
+            return []
         params = self._params({"q": q, "maxResults": 8, "printType": "books"})
         if lang:
             params["langRestrict"] = lang
-        with _client() as client:
-            resp = client.get("https://www.googleapis.com/books/v1/volumes", params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        try:
+            with _client() as client:
+                resp = client.get("https://www.googleapis.com/books/v1/volumes", params=params)
+                if resp.status_code == 429:
+                    retry = resp.headers.get("Retry-After", "")
+                    seconds = int(retry) if retry.isdigit() else 60
+                    _enter_backoff(seconds)
+                    return []
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response is not None and exc.response.status_code == 429:
+                retry = exc.response.headers.get("Retry-After", "")
+                seconds = int(retry) if retry.isdigit() else 60
+                _enter_backoff(seconds)
+                return []
+            raise
         items = data.get("items") or []
         return [_from_volume(item) for item in items]

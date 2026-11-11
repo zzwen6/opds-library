@@ -4,6 +4,7 @@ import App from "./App.vue";
 import Library from "./views/Library.vue";
 import BookDetail from "./views/BookDetail.vue";
 import ScrapeQueue from "./views/ScrapeQueue.vue";
+import Organize from "./views/Organize.vue";
 import Login from "./views/Login.vue";
 import "./style.css";
 import { hasAuth } from "./api/client";
@@ -15,6 +16,7 @@ const router = createRouter({
     { path: "/", component: Library },
     { path: "/books/:uuid", component: BookDetail },
     { path: "/scrape", component: ScrapeQueue },
+    { path: "/organize", component: Organize },
   ],
 });
 

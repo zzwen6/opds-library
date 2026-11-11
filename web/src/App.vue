@@ -5,6 +5,7 @@
       <nav>
         <router-link to="/">书目</router-link>
         <router-link to="/scrape">刮削确认</router-link>
+        <router-link to="/organize">整理文件</router-link>
       </nav>
       <div class="spacer"></div>
       <button class="btn secondary" :disabled="scanning" @click="rescan">

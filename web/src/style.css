@@ -98,3 +98,6 @@ button { cursor: pointer; }
   .detail, .form-grid { grid-template-columns: 1fr; }
   .wrap, .topbar { padding-left: 16px; padding-right: 16px; }
 }
+.org-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.org-table th, .org-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-all; }
+.org-table tr.move td:first-child { color: var(--accent); font-weight: 600; }
