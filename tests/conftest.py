@@ -26,6 +26,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PAGE_SIZE", "2")
     monkeypatch.setenv("WATCH_ENABLED", "false")
     monkeypatch.setenv("ORGANIZE_ENABLED", "false")
+    monkeypatch.setenv("DOUBAN_ENABLED", "false")
+    monkeypatch.setenv("DOUBAN_MIN_INTERVAL_SECONDS", "0")
     reset_settings_cache()
     from app.config import get_settings
 
