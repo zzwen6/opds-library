@@ -23,10 +23,17 @@ cp .env.example .env
 #   DATA_HOST_PATH     数据目录（数据库、封面），如 ./data
 #   PUID / PGID        运行容器的用户，见下方「NAS 权限」
 mkdir -p data douban-cache    # 先建好数据目录，避免被 Docker 以 root 身份自动创建
-docker compose up -d --build
+
+# Compose 只使用现成镜像，不负责构建。先在本地构建两个镜像（PUID/PGID 与 .env 保持一致）：
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.1 .
+docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
+
+docker compose up -d
 ```
 
-Compose 默认会一起启动中文刮削用的 `douban-book-api`（从 GitHub 公开仓库构建，只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
+镜像名可在 `.env` 里用 `OPDS_IMAGE`、`DOUBAN_IMAGE` 覆盖（例如推到私有仓库后的完整镜像名）。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。更新时重新构建镜像，再 `docker compose up -d` 即可。
+
+Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 
 然后访问：
 
@@ -125,7 +132,7 @@ alembic upgrade head
 
 本地开发时，先在另一进程启动该服务（默认 `http://127.0.0.1:3000`），再启动本项目。服务不可达时会跳过豆瓣，不影响 Open Library / Google Books。
 
-Docker 部署时，`docker-compose.yml` 默认一起启动该服务（从 GitHub 构建，缓存写在 `DOUBAN_CACHE_HOST_PATH`，默认 `./douban-cache`）。服务只在 Compose 内部网络可见；需要从宿主机调试时，取消 compose 里 `ports: 3000:3000` 的注释。不需要豆瓣源时，在 `.env` 里设 `DOUBAN_ENABLED=false`，并用 `docker compose up -d --build --no-deps opds-library` 只启动书库。
+Docker 部署时，`docker-compose.yml` 默认一起启动该服务（使用事先构建好的 `douban-book-api:zzwen6` 镜像，缓存写在 `DOUBAN_CACHE_HOST_PATH`，默认 `./douban-cache`）。服务只在 Compose 内部网络可见；需要从宿主机调试时，取消 compose 里 `ports: 3000:3000` 的注释。不需要豆瓣源时，在 `.env` 里设 `DOUBAN_ENABLED=false`，并用 `docker compose up -d --no-deps opds-library` 只启动书库。
 
 中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签取自页面里的「豆瓣成员常用标签」（需 douban-book-api 含 2026-11-11 的标签修复），通常有 5–10 个，作为候选标签参与写入；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
 

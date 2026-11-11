@@ -1,13 +1,11 @@
-# 用法：cp .env.example .env，改好 AUTH_PASSWORD 和路径后
-#   docker compose up -d --build
+# 本文件只使用现成镜像，不在 Compose 里构建。先在本地构建好两个镜像：
+#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.1 .
+#   docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
+# 然后 cp .env.example .env，改好 AUTH_PASSWORD 和路径，执行：
+#   docker compose up -d
 services:
   opds-library:
-    build:
-      context: .
-      args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
-    image: opds-library:0.5.1
+    image: ${OPDS_IMAGE:-opds-library:0.5.1}
     # 以非 root 运行；UID/GID 需对 /data（以及启用整理时的 /library）有写权限，见 README
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:
@@ -41,13 +39,11 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # 中文刮削用的 douban-book-api（从 GitHub 公开仓库构建）。
+  # 中文刮削用的 douban-book-api（镜像需事先构建，见文件开头）。
   # 不需要豆瓣源时：.env 里设 DOUBAN_ENABLED=false，
-  # 并用 docker compose up -d --build opds-library --no-deps 只启动书库。
+  # 并用 docker compose up -d --no-deps opds-library 只启动书库。
   douban-book-api:
-    image: douban-book-api:zzwen6
-    build:
-      context: https://github.com/zzwen6/douban-book-api.git#master
+    image: ${DOUBAN_IMAGE:-douban-book-api:zzwen6}
     # 默认只在 Compose 内部网络可见；需要从宿主机调试时取消注释
     # ports:
     #   - "3000:3000"
