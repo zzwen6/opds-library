@@ -78,6 +78,7 @@ def upgrade_schema(bind=None) -> None:
     additions = {
         "books": [
             "ALTER TABLE books ADD COLUMN field_sources_json TEXT",
+            "ALTER TABLE books ADD COLUMN translators TEXT",
         ],
         "scrape_records": [
             "ALTER TABLE scrape_records ADD COLUMN previous_values_json TEXT",

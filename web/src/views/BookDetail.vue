@@ -32,6 +32,10 @@
             <label>作者（逗号分隔） <span class="lock" @click="toggle('authors')">{{ locked('authors') ? "已锁定 · 点击解锁" : "未锁" }}</span></label>
             <input v-model="form.authors" />
           </div>
+          <div class="field full">
+            <label>译者 <span class="lock" @click="toggle('translators')">{{ locked('translators') ? "已锁定 · 点击解锁" : "未锁" }}</span></label>
+            <input v-model="form.translators" />
+          </div>
           <div class="field">
             <label>ISBN-13 <span class="lock" @click="toggle('isbn13')">{{ locked('isbn13') ? "已锁定 · 点击解锁" : "未锁" }}</span></label>
             <input v-model="form.isbn13" />
@@ -115,6 +119,7 @@ function applyBook(data: any) {
     title: data.title || "",
     subtitle: data.subtitle || "",
     authors: (data.authors || []).join(", "),
+    translators: data.translators || "",
     isbn13: data.isbn13 || "",
     language: data.language || "",
     publisher: data.publisher || "",
@@ -140,6 +145,7 @@ async function save() {
       title: form.title,
       subtitle: form.subtitle || null,
       authors: form.authors.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean),
+      translators: form.translators || null,
       isbn13: form.isbn13 || null,
       language: form.language || null,
       publisher: form.publisher || null,

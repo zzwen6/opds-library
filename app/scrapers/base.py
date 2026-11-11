@@ -13,6 +13,7 @@ class Candidate:
     title: str | None = None
     subtitle: str | None = None
     authors: list[str] = field(default_factory=list)
+    translators: list[str] = field(default_factory=list)
     isbn13: str | None = None
     isbn10: str | None = None
     publisher: str | None = None

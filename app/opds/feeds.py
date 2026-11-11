@@ -135,6 +135,9 @@ def append_book_entry(feed, book: Book, base: str) -> None:
         _el(entry, "identifier", f"urn:isbn:{book.isbn13}", ns=DC)
     if book.publisher:
         _el(entry, "publisher", book.publisher.name, ns=DC)
+    if book.translators:
+        for name in [n.strip() for n in book.translators.replace(",", "、").split("、") if n.strip()]:
+            _el(entry, "contributor", name, ns=DC)
     if book.description:
         _el(entry, "content", book.description, type="text")
         _el(entry, "summary", book.description[:400], type="text")

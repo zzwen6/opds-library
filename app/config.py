@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     watch_poll_seconds: int = 300
     watch_debounce_seconds: float = 2.0
 
+    # 豆瓣中文源：只调用独立的 douban-book-api HTTP 服务，不在本进程抓网页
+    douban_enabled: bool = True
+    douban_api_url: str = "http://127.0.0.1:3000"
+    douban_timeout_seconds: float = 15.0
+    douban_min_interval_seconds: float = 3.0
+    douban_search_detail_limit: int = 1
+
     @property
     def database_path(self) -> Path:
         return self.data_path / "library.db"

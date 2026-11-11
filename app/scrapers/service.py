@@ -12,6 +12,7 @@ from app.schemas import CandidateOut
 from app.scrapers import get_scraper, list_scrapers
 from app.scrapers.base import Candidate
 from app.scrapers.scoring import score_candidate
+from app.scrapers.priority import sort_candidates
 from app.services.books import BookUpdate, locked_fields, update_book
 from app.config import get_settings
 from app.util import normalize_space
@@ -33,7 +34,7 @@ def _candidate_to_out(record: ScrapeRecord, candidate: Candidate | None = None) 
             source_id=record.source_id,
             source_url=record.source_url,
             **{k: data[k] for k in (
-                "title", "subtitle", "authors", "isbn13", "publisher",
+                "title", "subtitle", "authors", "translators", "isbn13", "publisher",
                 "published_date", "description", "series", "language", "cover_url", "tags",
             ) if k in data},
         )
@@ -47,6 +48,7 @@ def _candidate_to_out(record: ScrapeRecord, candidate: Candidate | None = None) 
         title=candidate.title,
         subtitle=candidate.subtitle,
         authors=candidate.authors,
+        translators=candidate.translators,
         isbn13=candidate.isbn13,
         publisher=candidate.publisher,
         published_date=candidate.published_date,
@@ -63,6 +65,7 @@ def _persist(session: Session, book: Book, candidate: Candidate) -> ScrapeRecord
         "title": candidate.title,
         "subtitle": candidate.subtitle,
         "authors": candidate.authors,
+        "translators": candidate.translators,
         "isbn13": candidate.isbn13,
         "isbn10": candidate.isbn10,
         "publisher": candidate.publisher,
@@ -122,7 +125,7 @@ def scrape_book(session: Session, book: Book) -> list[CandidateOut]:
             errors.append(f"{scraper.id}: {exc}")
             logger.warning("刮削失败 %s: %s", scraper.id, exc)
 
-    collected.sort(key=lambda c: c.confidence, reverse=True)
+    collected = sort_candidates(collected, book)
     # 去重：同一源同一 source_id 只留一条
     seen: set[tuple[str, str | None]] = set()
     unique: list[Candidate] = []
@@ -172,7 +175,8 @@ def _apply_cover_from_url(session: Session, book: Book, url: str, source: str) -
             resp.raise_for_status()
             data = resp.content
             ctype = resp.headers.get("content-type", "")
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        logger.warning("下载封面失败 %s: %s", url, exc)
         return None
     ext = ".jpg"
     if "png" in ctype:
@@ -208,10 +212,12 @@ FIELD_MAP = {
     "language": "language",
     "description": "description",
     "published_date": "published_date",
+    "rating": "rating",
     "authors": "authors",
     "publisher": "publisher",
     "series": "series",
     "tags": "tags",
+    "translators": "translators",
 }
 
 
@@ -223,10 +229,12 @@ def current_field_values(book: Book) -> dict:
         "language": book.language,
         "description": book.description,
         "published_date": book.published_date,
+        "rating": book.rating,
         "authors": [ba.author.name for ba in sorted(book.authors, key=lambda x: x.position) if ba.author],
         "publisher": book.publisher.name if book.publisher else None,
         "series": book.series.name if book.series else None,
         "tags": [bt.tag.name for bt in book.tags if bt.tag],
+        "translators": book.translators,
         "cover_id": book.cover_id,
         "field_sources": json.loads(book.field_sources_json or "{}"),
     }
@@ -255,6 +263,10 @@ def apply_candidate(session: Session, book: Book, record_id: int, mode: str = "m
         value = data.get(src)
         if value in (None, "", []):
             continue
+        if dest == "translators" and isinstance(value, list):
+            value = "、".join(str(v) for v in value if v)
+            if not value:
+                continue
         payload[dest] = value
         applied.append(dest)
 

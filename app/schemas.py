@@ -95,6 +95,7 @@ class BookDetail(BookListItem):
     page_count: Optional[int] = None
     rating: Optional[float] = None
     tags: list[str] = Field(default_factory=list)
+    translators: Optional[str] = None
     files: list[FileOut] = Field(default_factory=list)
     locks: list[FieldLockOut] = Field(default_factory=list)
     covers: list[CoverOut] = Field(default_factory=list)
@@ -117,6 +118,7 @@ class BookUpdate(BaseModel):
     publisher: Optional[str] = None
     series: Optional[str] = None
     tags: Optional[list[str]] = None
+    translators: Optional[str] = None
 
 
 class LockRequest(BaseModel):
@@ -147,6 +149,7 @@ class CandidateOut(BaseModel):
     title: Optional[str] = None
     subtitle: Optional[str] = None
     authors: list[str] = Field(default_factory=list)
+    translators: list[str] = Field(default_factory=list)
     isbn13: Optional[str] = None
     publisher: Optional[str] = None
     published_date: Optional[str] = None

@@ -43,6 +43,7 @@ EDITABLE_FIELDS = {
     "publisher",
     "series",
     "tags",
+    "translators",
     "cover",
 }
 
@@ -106,6 +107,7 @@ def book_to_detail(book: Book) -> BookDetail:
         page_count=book.page_count,
         rating=book.rating,
         tags=[bt.tag.name for bt in book.tags if bt.tag],
+        translators=book.translators,
         files=[
             FileOut(
                 id=f.id,
@@ -289,6 +291,7 @@ def update_book(session: Session, book: Book, payload: BookUpdate, auto_lock: bo
         "page_count",
         "rating",
         "series_index",
+        "translators",
     }
     for field in simple:
         if field not in data:

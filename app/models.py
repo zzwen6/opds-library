@@ -40,6 +40,7 @@ class Book(Base):
     isbn10: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     language: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    translators: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     publisher_id: Mapped[Optional[int]] = mapped_column(ForeignKey("publishers.id"), nullable=True)
     series_id: Mapped[Optional[int]] = mapped_column(ForeignKey("series.id"), nullable=True)
     series_index: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)

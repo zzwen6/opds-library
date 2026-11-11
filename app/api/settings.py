@@ -19,4 +19,6 @@ def api_settings():
         "watch_enabled": settings.watch_enabled,
         "watch_poll_seconds": settings.watch_poll_seconds,
         "library_path": str(settings.library_path),
+        "douban_enabled": settings.douban_enabled,
+        "douban_api_url": settings.douban_api_url,
     }
