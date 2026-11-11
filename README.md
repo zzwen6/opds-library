@@ -84,6 +84,7 @@ alembic upgrade head
 | `DOUBAN_TIMEOUT_SECONDS` | `15` | 调用该服务的超时时间 |
 | `DOUBAN_MIN_INTERVAL_SECONDS` | `3` | 两次请求之间的最短间隔，降低对上游的压力 |
 | `DOUBAN_SEARCH_DETAIL_LIMIT` | `1` | 关键词搜索后，最多再请求几条 `/subject/:id` 补全简介 |
+| `DOUBAN_COVER_BROWSER_HEADERS` | `true` | 仅对 `*.doubanio.com` 封面使用常见桌面浏览器请求头（User-Agent / Accept: image/* / Referer: https://book.douban.com/）。不含 cookie、不走代理。失败（418/403/超时）时保留已有封面且不重试 |
 | `PAGE_SIZE` | `50` | OPDS 与 API 默认分页大小 |
 | `HOST` / `PORT` | `0.0.0.0` / `8080` | 监听地址 |
 
@@ -109,7 +110,7 @@ echo 'DOUBAN_API_URL=http://douban-book-api:3000' >> .env
 docker compose --profile douban up --build -d
 ```
 
-中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签目前常为空；若 `original_title` 被误填成作者名，本项目会丢弃。
+中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签目前常为空；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
 
 ## 整理书库文件（默认关闭）
 

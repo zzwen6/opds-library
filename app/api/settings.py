@@ -21,4 +21,5 @@ def api_settings():
         "library_path": str(settings.library_path),
         "douban_enabled": settings.douban_enabled,
         "douban_api_url": settings.douban_api_url,
+        "douban_cover_browser_headers": settings.douban_cover_browser_headers,
     }

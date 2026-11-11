@@ -10,6 +10,7 @@ import httpx
 from app.config import get_settings
 from app.scrapers.base import Candidate, Scraper, register
 from app.util import normalize_isbn, normalize_space
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,41 @@ def _wait_for_interval(seconds: float) -> None:
             time.sleep(wait)
         _last_request_at = time.monotonic()
 
+
+
+# 仅用于 *.doubanio.com 封面下载；不含 cookie、不走代理
+DOUBAN_COVER_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def is_douban_cover_host(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host == "doubanio.com" or host.endswith(".doubanio.com")
+
+
+def cover_download_headers(url: str, default_ua: str) -> dict[str, str]:
+    """只有豆瓣图片域名且开关打开时，才带常见桌面浏览器头。"""
+    settings = get_settings()
+    if settings.douban_cover_browser_headers and is_douban_cover_host(url):
+        return {
+            "User-Agent": DOUBAN_COVER_BROWSER_UA,
+            "Accept": "image/*",
+            "Referer": "https://book.douban.com/",
+        }
+    headers = {"User-Agent": default_ua}
+    if default_ua:
+        headers["User-Agent"] = default_ua
+    return headers
+
+
+def throttle_douban_cover(url: str) -> None:
+    """豆瓣封面与元数据请求共用同一低频间隔，避免连续打图片 CDN。"""
+    if not is_douban_cover_host(url):
+        return
+    settings = get_settings()
+    _wait_for_interval(settings.douban_min_interval_seconds)
 
 def _as_list(value: Any) -> list[str]:
     if value is None or value == "":

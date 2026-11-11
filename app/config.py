@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     douban_timeout_seconds: float = 15.0
     douban_min_interval_seconds: float = 3.0
     douban_search_detail_limit: int = 1
+    # 仅对 *.doubanio.com 封面下载使用常见浏览器请求头（不含 cookie/代理）
+    douban_cover_browser_headers: bool = True
 
     @property
     def database_path(self) -> Path:

@@ -18,14 +18,14 @@ def test_full_scan_imports_epub_and_pdf(env):
         session.commit()
         books = session.query(Book).all()
         files = session.query(BookFile).all()
+        pride = next(b for b in books if "Pride" in b.title)
+        assert pride.isbn13 == "9780141439518"
+        assert any(ba.author.name == "Jane Austen" for ba in pride.authors)
+        assert pride.cover_id is not None
     assert result.scanned_files == 2
     assert result.added == 2
     assert len(books) == 2
     assert len(files) == 2
-    pride = next(b for b in books if "Pride" in b.title)
-    assert pride.isbn13 == "9780141439518"
-    assert any(ba.author.name == "Jane Austen" for ba in pride.authors)
-    assert pride.cover_id is not None
     cover_dir = env["data"] / "covers"
     assert any(cover_dir.iterdir())
 

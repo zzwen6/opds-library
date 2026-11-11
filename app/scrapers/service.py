@@ -13,6 +13,11 @@ from app.scrapers import get_scraper, list_scrapers
 from app.scrapers.base import Candidate
 from app.scrapers.scoring import score_candidate
 from app.scrapers.priority import sort_candidates
+from app.scrapers.douban import (
+    cover_download_headers,
+    is_douban_cover_host,
+    throttle_douban_cover,
+)
 from app.services.books import BookUpdate, locked_fields, update_book
 from app.config import get_settings
 from app.util import normalize_space
@@ -167,16 +172,56 @@ def list_queue(session: Session) -> list[dict]:
     return items
 
 
-def _apply_cover_from_url(session: Session, book: Book, url: str, source: str) -> Cover | None:
+def _cover_http_client(timeout: float, headers: dict[str, str]) -> httpx.Client:
+    return httpx.Client(timeout=timeout, follow_redirects=True, headers=headers)
+
+
+def download_cover_image(url: str) -> dict:
+    """下载封面。豆瓣图片走限速与可选浏览器头；失败不重试，由调用方保留旧封面。"""
     settings = get_settings()
+    headers = cover_download_headers(url, settings.user_agent)
+    timeout = settings.douban_timeout_seconds if is_douban_cover_host(url) else 20.0
+    if is_douban_cover_host(url):
+        throttle_douban_cover(url)
+    result = {"url": url, "status_code": None, "content": None, "content_type": None, "error": None, "headers": headers}
     try:
-        with httpx.Client(timeout=20.0, follow_redirects=True, headers={"User-Agent": settings.user_agent}) as client:
+        with _cover_http_client(timeout, headers) as client:
             resp = client.get(url)
+            result["status_code"] = resp.status_code
+            result["content_type"] = resp.headers.get("content-type", "")
+            if resp.status_code in {401, 403, 418, 429}:
+                result["error"] = f"HTTP {resp.status_code}"
+                logger.warning("下载封面被拒绝 %s：%s，保留现有封面", url, result["error"])
+                return result
             resp.raise_for_status()
-            data = resp.content
-            ctype = resp.headers.get("content-type", "")
+            ctype = result["content_type"] or ""
+            if "html" in ctype.lower() and "image" not in ctype.lower():
+                result["error"] = f"非图片响应 ({ctype})"
+                logger.warning("下载封面失败 %s：%s，保留现有封面", url, result["error"])
+                return result
+            if not resp.content:
+                result["error"] = f"HTTP {resp.status_code} 空响应"
+                logger.warning("下载封面失败 %s：%s，保留现有封面", url, result["error"])
+                return result
+            result["content"] = resp.content
+            return result
+    except httpx.TimeoutException as exc:
+        result["error"] = f"超时: {exc}"
+        logger.warning("下载封面超时 %s：%s，保留现有封面", url, exc)
+        return result
     except httpx.HTTPError as exc:
-        logger.warning("下载封面失败 %s: %s", url, exc)
+        status = exc.response.status_code if getattr(exc, "response", None) is not None else None
+        result["status_code"] = result["status_code"] or status
+        result["error"] = f"HTTP {status}: {exc}" if status else str(exc)
+        logger.warning("下载封面失败 %s：%s，保留现有封面", url, result["error"])
+        return result
+
+
+def apply_downloaded_cover(session: Session, book: Book, fetched: dict, source: str) -> Cover | None:
+    settings = get_settings()
+    data = fetched.get("content")
+    ctype = fetched.get("content_type") or ""
+    if not data:
         return None
     ext = ".jpg"
     if "png" in ctype:
@@ -202,6 +247,10 @@ def _apply_cover_from_url(session: Session, book: Book, url: str, source: str) -
     session.flush()
     book.cover_id = cover.id
     return cover
+
+
+def _apply_cover_from_url(session: Session, book: Book, url: str, source: str) -> Cover | None:
+    return apply_downloaded_cover(session, book, download_cover_image(url), source)
 
 
 

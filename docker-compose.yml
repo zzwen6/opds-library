@@ -22,6 +22,7 @@ services:
       DOUBAN_API_URL: ${DOUBAN_API_URL:-http://127.0.0.1:3000}
       DOUBAN_TIMEOUT_SECONDS: ${DOUBAN_TIMEOUT_SECONDS:-15}
       DOUBAN_MIN_INTERVAL_SECONDS: ${DOUBAN_MIN_INTERVAL_SECONDS:-3}
+      DOUBAN_COVER_BROWSER_HEADERS: ${DOUBAN_COVER_BROWSER_HEADERS:-true}
     volumes:
       # 书库默认只读挂载，服务不会写回原文件内容。
       # 若要启用整理/改名（ORGANIZE_ENABLED=true），把下一行的 :ro 去掉，改为：
