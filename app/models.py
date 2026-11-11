@@ -269,3 +269,53 @@ class OrganizeMove(Base):
 
     batch: Mapped[OrganizeBatch] = relationship(back_populates="moves")
 
+
+
+class EditBatch(Base):
+    """一次批量操作（批量编辑 / 作者归并 / 合并重复书），用于撤销和审计。"""
+
+    __tablename__ = "edit_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)  # batch_edit | author_merge | book_merge
+    status: Mapped[str] = mapped_column(String(32), default="applied", index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    request_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    result_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    undone_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    changes: Mapped[list["EditChange"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan", order_by="EditChange.id"
+    )
+
+
+class EditChange(Base):
+    """字段级变更：旧值、新值、旧来源、是否由本次加锁。book_uuid 不建外键，书被合并删除后记录仍在。"""
+
+    __tablename__ = "edit_changes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("edit_batches.id"), index=True)
+    book_uuid: Mapped[str] = mapped_column(String(36), index=True)
+    field_name: Mapped[str] = mapped_column(String(64))
+    old_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    old_source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    lock_added: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(32), default="applied")
+
+    batch: Mapped[EditBatch] = relationship(back_populates="changes")
+
+
+class DuplicateIgnore(Base):
+    """用户标记“不是重复”的分组签名。成员变化后签名不同，会重新提示。"""
+
+    __tablename__ = "duplicate_ignores"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_key: Mapped[str] = mapped_column(String(2048), unique=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    note: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

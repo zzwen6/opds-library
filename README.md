@@ -8,6 +8,8 @@
 - 手动编辑元数据，字段级锁定，防止后续刮削覆盖
 - 可插拔刮削器：内置 Open Library、Google Books，以及通过独立 HTTP 服务接入的豆瓣中文源。中文书优先豆瓣，其他优先 Open Library。高分或 ISBN 精确命中时自动写入未锁定字段，可在 Web 上撤销一次；也可批量刮削未处理书目
 - 可选按模板整理、重命名书库文件（默认关闭；先预览再执行，可回滚）
+- 批量编辑：多选书目，一次改作者、系列（可自动编号）、标签、语言、出版社；作者写法归并；先预览影响范围，跳过已锁定字段，可撤销（0.4.0）
+- 重复书检测：文件哈希相同、ISBN 相同、书名+作者模糊匹配三类线索；可把同一本书的多种格式合并到一个条目，或标记“不是重复”；只改数据库，不删磁盘文件，合并可撤销（0.4.0）
 - Web 与 OPDS 共用一套 HTTP Basic 账号（环境变量配置）
 
 ## 快速开始（Docker）
@@ -136,6 +138,50 @@ docker compose --profile douban up --build -d
 
 模板可用变量：`author`、`authors`、`series`、`series_index`、`title`、`subtitle`、`publisher`、`year`、`isbn`、`language`、`ext`、`format`、`filename`、`uuid`。非法字符会被替换，中文保留，空路径段省略，重名时追加 `(2)`、`(3)`…。
 
+## 批量编辑与作者归并（0.4.0）
+
+在「书目」页点「多选」，点选封面（或“全选本页 / 全选全部结果”），再点「批量编辑」：
+
+- 可改字段：作者（替换 / 追加 / 移除）、标签（追加 / 移除 / 替换）、系列（可同时设置序号：不改 / 统一设为 / 按选择顺序自动编号）、语言、出版社。只改勾选的字段，留空表示清除。
+- 先点「预览影响范围」，显示将修改多少本、多少处，以及因字段锁定被跳过的书；确认后才执行。
+- **字段锁**：某本书的对应字段已锁定时，这本书的该字段跳过并在结果里列出，其它字段照常修改。
+- 默认勾选「改过的字段加锁」，和单本手动编辑一致，避免之后的刮削覆盖。
+- 每处修改都记录旧值、新值和原来源（`field_sources` 记为 `batch`）。在「作者归并 / 批量记录」页可整批撤销。撤销时如果某字段之后又被改过，保留新值并提示冲突，不会硬覆盖。
+
+「作者归并 / 批量记录」页还提供作者归并：
+
+- 自动列出“疑似同一作者”。规范化规则：全角转半角，忽略大小写、空格和标点，去掉开头的 `[美]`、`（英）`、`〔日〕` 等国籍括注，西文兼容「名 姓」与「姓, 名」。
+- 也可手动多选作者写法，改成一个统一名称。作者字段已锁定的书会跳过。
+- 旧写法记为目标作者的别名；没有书再引用的旧作者条目会被删除。撤销时会重新创建。
+
+API：`POST /api/batch/preview`、`POST /api/batch/apply`、`GET /api/authors/variants`、`POST /api/authors/merge/preview`、`POST /api/authors/merge`、`GET /api/edit-batches`、`POST /api/edit-batches/{id}/undo`。
+
+## 重复书检测与合并（0.4.0）
+
+「重复书」页按置信度列出疑似重复分组：
+
+| 类型 | 置信度 | 判定 |
+| --- | --- | --- |
+| 相同文件 | 100 | SHA-256 相同。扫描时同哈希的副本已挂在同一本书下，这里**只标记**，不会删除任何磁盘文件；OPDS 中只给出一个下载链接 |
+| 相同 ISBN | 95 | 书目的 ISBN-13/10 和文件内提取到的 ISBN 统一换算为 ISBN-13 后相同 |
+| 书名作者相近 | 55–80 | 书名规范化后相同，并且作者有交集（80）；作者信息缺失（60）；主书名相同、副标题不同（65）；同作者下书名相似度 ≥ 90%（55）。只作为建议 |
+
+书名规范化会去掉书名号、括注（如 `（精校版）`、`[epub]`）、全角符号、标点和空白。
+
+可以做的操作：
+
+- **合并**：选一个主书目，勾选要并入的书，先「预览合并」再「确认合并」。其它书目的文件、封面、刮削记录会挂到主书目下，OPDS 条目随之提供多个格式的下载链接；被并入的书目条目从数据库删除，**磁盘文件不动**。
+  - 主书目已锁定的字段保持不变。
+  - 被并入书目中**已锁定**的字段，在主书目未锁定时优先采用，并在主书目上保持锁定。
+  - 主书目为空的字段，用第一个有值的被并入书目补齐。
+  - 标签取并集。
+- **不是重复**：记住这个分组，之后不再提示。分组成员变化（例如新加入一本）后会重新提示。可勾选“显示已标记”后取消标记。
+- **撤销合并**：在「批量记录」中撤销。被并入的书目按原 UUID 恢复（OPDS 标识不变），文件、封面、刮削记录、字段锁一并挂回。主书目被补齐的字段也会还原，若这些字段之后又改过则保留现状。
+
+API：`GET /api/duplicates[?include_ignored=true]`、`POST /api/duplicates/ignore`、`POST /api/duplicates/unignore`、`POST /api/duplicates/merge/preview`、`POST /api/duplicates/merge`。
+
+数据库升级：新增 `edit_batches`、`edit_changes`、`duplicate_ignores` 三张表，启动时自动创建，不改动已有表与数据。书目与文件本来就是一对多，合并直接复用这一关系。
+
 ## 文件监听
 
 服务启动后默认开启监听：优先使用 watchdog/inotify，并按 `WATCH_POLL_SECONDS` 做定时轮询兜底。部分 NAS / 网络挂载无法可靠投递 inotify 事件，轮询可避免漏扫。测试或临时关闭可设 `WATCH_ENABLED=false`。
@@ -152,7 +198,7 @@ docker compose --profile douban up --build -d
 | `/opds/tags`、`/opds/tags/{id}` | 标签 |
 | `/opds/search.xml` | OpenSearch 描述 |
 | `/opds/search?q=` | 搜索获取馆 |
-| `/opds/download/{file_id}` | 下载（`rel=acquisition`，**不是** open-access） |
+| `/opds/download/{file_id}` | 下载（`rel=acquisition`，**不是** open-access）。一本书有多种格式时给出多个下载链接；内容完全相同的副本只给一个 |
 | `/opds/covers/{book_uuid}`、`/opds/thumbs/{book_uuid}` | 封面与缩略图 |
 
 ## 设计约定
@@ -162,7 +208,8 @@ docker compose --profile douban up --build -d
 - 默认不把元数据写回原书文件。整理/改名默认关闭，需显式打开，并且只移动文件。
 - 中文书元数据：通过独立的 douban-book-api 接入豆瓣（不在本进程抓网页）。也可继续只用 Open Library。对比与风险见 `docs/CHINESE_SOURCES.md`。
 - Web 与 OPDS 共用一个 HTTP Basic 账号，不同步阅读进度。
+- 批量编辑、作者归并、合并重复书全部只改数据库，每批可撤销；任何操作都不会删除书库中的文件。
 
 ## 备份
 
-停止服务后，复制 `data/library.db`（建议同时复制 `data/library.db-wal`）以及 `data/covers/`。也可以在 SQLite 中对运行中的数据库执行 `.backup`。若使用过整理功能，书文件本身也要以书库目录为准备份。
+停止服务后，复制 `data/library.db`（建议同时复制 `data/library.db-wal`）以及 `data/covers/`。批量编辑与合并记录也保存在 `library.db` 中。也可以在 SQLite 中对运行中的数据库执行 `.backup`。若使用过整理功能，书文件本身也要以书库目录为准备份。

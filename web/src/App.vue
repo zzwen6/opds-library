@@ -5,6 +5,8 @@
       <nav>
         <router-link to="/">书目</router-link>
         <router-link to="/scrape">刮削确认</router-link>
+        <router-link to="/duplicates">重复书</router-link>
+        <router-link to="/edits">作者归并 / 批量记录</router-link>
         <router-link to="/organize">整理文件</router-link>
       </nav>
       <div class="spacer"></div>

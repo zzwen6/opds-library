@@ -158,9 +158,15 @@ def append_book_entry(feed, book: Book, base: str) -> None:
             _abs(base, f"/opds/thumbs/{book.uuid}"),
             typ="image/jpeg",
         )
+    seen_hashes: set[str] = set()
     for f in book.files:
         if f.missing_at is not None:
             continue
+        # 内容完全相同的副本只暴露一个下载链接
+        if f.sha256:
+            if f.sha256 in seen_hashes:
+                continue
+            seen_hashes.add(f.sha256)
         mime = MIME_BY_FORMAT.get(f.format, "application/octet-stream")
         _link(
             entry,

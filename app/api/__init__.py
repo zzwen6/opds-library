@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends
 
-from app.api import books, covers, organize, scan, scrape, settings
+from app.api import batch, books, covers, duplicates, organize, scan, scrape, settings
 from app.auth import require_basic
 
 api_router = APIRouter(dependencies=[Depends(require_basic)])
+api_router.include_router(batch.router)
 api_router.include_router(books.router)
+api_router.include_router(duplicates.router)
 api_router.include_router(covers.router)
 api_router.include_router(scan.router)
 api_router.include_router(scrape.router)

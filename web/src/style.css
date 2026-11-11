@@ -101,3 +101,26 @@ button { cursor: pointer; }
 .org-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .org-table th, .org-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-all; }
 .org-table tr.move td:first-child { color: var(--accent); font-weight: 600; }
+.select-bar { display: flex; gap: 10px; align-items: center; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 12px; position: sticky; top: 0; z-index: 5; }
+.select-bar .spacer { flex: 1; }
+.card { position: relative; cursor: pointer; }
+.card.picked { outline: 3px solid var(--accent); }
+.cover { position: relative; }
+.check { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,.9); border: 1px solid var(--line); color: var(--accent); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto; z-index: 50; }
+.modal { background: var(--bg-elev, #fff); border-radius: var(--radius); box-shadow: var(--shadow); width: min(760px, 100%); padding: 20px 24px; }
+.modal h2 { margin-top: 0; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.batch-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.batch-row > label:first-child { min-width: 90px; }
+.batch-row label.sub { padding-left: 24px; color: var(--muted); font-size: 13px; }
+.batch-row input:not([type=checkbox]):not([type=radio]), .batch-row select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; flex: 1; min-width: 160px; }
+.batch-row select { flex: 0 0 auto; }
+.preview-box { background: #fff; border: 1px dashed var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 12px; }
+.detail-list { margin: 6px 0; padding-left: 18px; font-size: 13px; max-height: 260px; overflow: auto; }
+.detail-list li { margin: 4px 0; }
+.chip.locked { color: var(--accent); }
+.queue-item.dim { opacity: .6; }
+.kind-hash { color: #fff; background: #7a2b20; }
+.kind-isbn { color: #fff; background: #345a7a; }
+.kind-fuzzy { color: #4a3d1a; background: #efe2b5; }
