@@ -3,7 +3,7 @@
     <p class="muted"><router-link to="/">← 返回书库</router-link></p>
     <div class="detail">
       <div>
-        <img v-if="book.cover_url" class="poster" :src="book.cover_url" :alt="book.title" />
+        <AuthImg v-if="book.cover_url" class="poster" :src="book.cover_url" :alt="book.title" />
         <div v-else class="poster" style="display:grid;place-items:center;color:#6d6458">暂无封面</div>
         <label class="btn secondary" style="display:block;text-align:center;margin-top:12px">
           更换封面
@@ -97,6 +97,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api/client";
+import AuthImg from "../components/AuthImg.vue";
 
 const route = useRoute();
 const book = ref<any>(null);

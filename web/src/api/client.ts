@@ -47,3 +47,22 @@ export async function api(path: string, init: RequestInit = {}) {
   if (ctype.includes("application/json")) return resp.json();
   return resp;
 }
+
+/** 用已登录凭证取图片，返回 object URL。不会走浏览器原生验证框。 */
+export async function fetchAuthBlob(path: string): Promise<string | null> {
+  const headers = new Headers();
+  const auth = authHeader();
+  if (auth.Authorization) headers.set("Authorization", auth.Authorization);
+  const resp = await fetch(path, { headers });
+  if (resp.status === 401) {
+    clearAuth();
+    if (!location.pathname.startsWith("/login")) {
+      location.href = "/login";
+    }
+    return null;
+  }
+  if (!resp.ok) return null;
+  const blob = await resp.blob();
+  if (!blob.size) return null;
+  return URL.createObjectURL(blob);
+}

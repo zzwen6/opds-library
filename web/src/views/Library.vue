@@ -74,8 +74,9 @@
         :to="selecting ? undefined : `/books/${book.uuid}`"
         @click="selecting && toggle(book.uuid)"
       >
-        <div class="cover" :style="book.thumb_url ? { backgroundImage: `url(${book.thumb_url})` } : {}">
-          <div v-if="!book.thumb_url" class="placeholder">{{ book.title }}</div>
+        <div class="cover">
+          <AuthImg v-if="book.thumb_url" class="cover-photo" :src="book.thumb_url" :alt="book.title" />
+          <div v-else class="placeholder">{{ book.title }}</div>
           <span v-if="selecting" class="check">{{ isSelected(book.uuid) ? "✓" : "" }}</span>
         </div>
         <div class="meta">
@@ -100,6 +101,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api/client";
 import BatchEditDialog from "../components/BatchEditDialog.vue";
+import AuthImg from "../components/AuthImg.vue";
 
 type UploadItem = {
   name: string;
