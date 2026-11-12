@@ -15,6 +15,7 @@
         <p class="muted">
           可用变量：author、authors、series、series_index、title、subtitle、publisher、year、isbn、language、ext、format、filename、uuid。
           非法字符会被替换，空的路径段会省略；重名时追加 (2)、(3)…
+          「title」若仍是「Kindle电子书:《三体》」这类脏书名，整理时会自动用清洗后的「三体」。建议先到「刮削确认」页点「清理脏标题并重新刮削」，再用官方书名整理。
         </p>
       </div>
     </div>

@@ -36,13 +36,13 @@ docker compose up -d
 也可以不走 GHCR，在本地构建：
 
 ```bash
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.3 .
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.4 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 # Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
 # 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
 ```
 
-然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.3` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
+然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.4` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
 
 Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 
@@ -134,7 +134,7 @@ alembic upgrade head
 - 分数 ≥ `SCRAPE_AUTO_THRESHOLD`（默认 90），或 ISBN 精确一致时，自动写入**未锁定**字段。
 - 低于阈值的候选进入「刮削确认」队列，需手动采用。
 - 自动写入会记录字段级来源和旧值；可在书目详情页「撤销自动写入」一次，恢复写入前的值。
-- 「刮削确认」页支持对 `scrape_status=pending` 的书目批量自动刮削。
+- 「刮削确认」页支持对 `scrape_status=pending` 的书目批量自动刮削；也可「清理脏标题并重新刮削」（0.5.4），会处理失败、待确认和仍是脏书名的记录。已手动确认且标题干净的书不会被改。
 - 保存手改字段仍会自动锁定，后续刮削（含自动写入）会跳过锁定字段。
 
 ### 文件名 / 脏标题清洗（0.5.2）
@@ -148,7 +148,7 @@ alembic upgrade head
 - 用清洗后的书名查不到时，依次退到去掉副标题、去掉卷号的短书名（`三体2:黑暗森林` → `三体2` → `三体`）。
 - 扫描时：内嵌标题干净就原样用；内嵌标题是脏标题、或没有内嵌标题时用清洗结果；锁定的书名不会被改。
 - 0.5.2 同时修复了 MOBI/AZW3 内嵌元数据从未被读取的问题（之前 `mobi.extract` 调用参数错误被静默吞掉）。
-- 已入库的旧书不会因为重新扫描而改名（文件没变化时扫描会跳过）；对它们重新刮削即可，查询会自动用清洗后的书名。
+- 已入库的旧书不会因为重新扫描而改名（文件没变化时扫描会跳过）。0.5.4 起，可在「刮削确认」页点「清理脏标题并重新刮削」：未锁定的脏书名会先写成清洗结果，再重新查询；整理文件时 `{title}` 也会用清洗后的书名，避免出现 `刘慈欣/Kindle电子书＿《三体》.mobi`。
 
 ## 豆瓣中文源
 

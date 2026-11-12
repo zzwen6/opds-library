@@ -4,6 +4,8 @@ import json
 import threading
 from datetime import datetime, timezone
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,6 +18,7 @@ from app.scrapers.service import (
     list_queue,
     scrape_book,
     scrape_pending_books,
+    scrape_rescrape_books,
     undo_auto_apply,
 )
 from app.services.books import book_to_detail, get_book_by_uuid
@@ -30,6 +33,10 @@ _batch_error: str | None = None
 
 class ConfirmBody(BaseModel):
     record_id: int
+
+
+class BatchScrapeRequest(BaseModel):
+    mode: Literal["pending", "rescrape"] = "pending"
 
 
 @router.get("/scrape/queue")
@@ -77,14 +84,14 @@ def api_undo(book_uuid: str, session: Session = Depends(get_session)):
     return book_to_detail(book)
 
 
-def _run_batch() -> None:
+def _run_batch(mode: str = "pending") -> None:
     global _batch_running, _batch_result, _batch_error
     session = SessionLocal()
     job = Job(type="scrape_batch", status="running", started_at=datetime.now(timezone.utc))
     session.add(job)
     session.commit()
     try:
-        result = scrape_pending_books(session)
+        result = scrape_rescrape_books(session) if mode == "rescrape" else scrape_pending_books(session)
         session.commit()
         job.status = "done"
         job.result_json = json.dumps(result, ensure_ascii=False)
@@ -107,14 +114,19 @@ def _run_batch() -> None:
 
 
 @router.post("/scrape/batch", status_code=202)
-def api_batch_scrape():
+def api_batch_scrape(body: BatchScrapeRequest | None = None):
     global _batch_running
+    req = body or BatchScrapeRequest()
     with _batch_lock:
         if _batch_running:
             raise HTTPException(status_code=409, detail="批量刮削正在进行")
         _batch_running = True
-    threading.Thread(target=_run_batch, daemon=True).start()
-    return {"ok": True, "message": "已开始对未刮削书目批量自动刮削"}
+    threading.Thread(target=_run_batch, args=(req.mode,), daemon=True).start()
+    if req.mode == "rescrape":
+        message = "已开始清理脏标题，并对未刮削、失败、待确认以及刚清过标题的书重新刮削"
+    else:
+        message = "已开始对未刮削书目批量自动刮削"
+    return {"ok": True, "message": message, "mode": req.mode}
 
 
 @router.get("/scrape/batch/status")

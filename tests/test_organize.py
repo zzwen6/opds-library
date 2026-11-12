@@ -138,3 +138,24 @@ def test_rollback_restores_paths(env, monkeypatch):
         assert book_file.rel_path == "raw.epub"
         # 空目录被清理
         assert not (lib / "Mary Shelley").exists()
+
+
+def test_preview_cleans_dirty_title(env, monkeypatch):
+    """库里仍是脏书名时，整理路径用清洗结果，而不是 Kindle电子书＿《三体》。"""
+    _enable_organize(monkeypatch)
+    lib = env["library"]
+    make_epub(lib / "Kindle电子书：《三体》 - 刘慈欣.epub", "Kindle电子书:《三体》", "刘慈欣")
+    with SessionLocal() as session:
+        scan_library(session, lib)
+        session.commit()
+        book = session.query(Book).one()
+        # 模拟 0.5.2 之前已入库、扫描不会再改的脏标题
+        book.title = "Kindle电子书:《三体》"
+        session.commit()
+        preview = preview_organize(session, "{author}/{title}.{ext}")
+        assert preview["move_count"] == 1
+        item = preview["items"][0]
+        assert item["title"] == "三体"
+        assert item["to_path"] == "刘慈欣/三体.epub"
+        assert "Kindle" not in item["to_path"]
+        assert "《" not in item["to_path"]

@@ -21,7 +21,7 @@ from app.scrapers.douban import (
 from app.services.books import BookUpdate, locked_fields, update_book
 from app.config import get_settings
 from app.util import normalize_space
-from app.title_clean import clean_title, query_titles, scoring_title
+from app.title_clean import clean_title, is_dirty_title, query_titles, scoring_title
 import httpx
 import logging
 
@@ -445,8 +445,13 @@ def pending_books_for_batch(session: Session) -> list[Book]:
 
 
 def scrape_pending_books(session: Session) -> dict:
-    books = pending_books_for_batch(session)
+    return _scrape_book_list(session, pending_books_for_batch(session))
+
+
+def _scrape_book_list(session: Session, books: list[Book], extra: dict | None = None) -> dict:
     result = {"total": len(books), "auto_applied": 0, "needs_review": 0, "failed": 0, "errors": []}
+    if extra:
+        result.update(extra)
     for book in books:
         try:
             scrape_book(session, book)
@@ -463,3 +468,59 @@ def scrape_pending_books(session: Session) -> dict:
             logger.warning("批量刮削失败 %s: %s", book.uuid, exc)
     session.flush()
     return result
+
+
+def clean_unlocked_dirty_titles(session: Session) -> list[dict]:
+    """把未锁定的脏书名写成清洗结果，并在没有作者时补上从文件名解析出的作者提示。"""
+    from app.services.books import BookUpdate, book_query_options, locked_fields, update_book
+
+    books = list(session.scalars(select(Book).options(*book_query_options())).unique().all())
+    cleaned: list[dict] = []
+    for book in books:
+        locked = locked_fields(book)
+        if "title" in locked or not is_dirty_title(book.title):
+            continue
+        hint = clean_title(book.title)
+        if not hint.title or not hint.changed:
+            continue
+        old_title = book.title
+        book.title = hint.title
+        author_set = None
+        if hint.author and not _authors_of(book) and "authors" not in locked:
+            update_book(session, book, BookUpdate(authors=[hint.author]), auto_lock=False)
+            book = session.merge(book)
+            author_set = hint.author
+        book.updated_at = datetime.now(timezone.utc)
+        cleaned.append({
+            "uuid": book.uuid,
+            "old_title": old_title,
+            "title": book.title,
+            "author_set": author_set,
+        })
+    session.flush()
+    return cleaned
+
+
+def books_for_rescrape(session: Session, cleaned_uuids: set[str] | None = None) -> list[Book]:
+    """未刮削、失败、待确认，以及刚清过脏标题且尚未手动确认的书。"""
+    from app.services.books import book_query_options
+
+    cleaned_uuids = cleaned_uuids or set()
+    books = list(session.scalars(select(Book).options(*book_query_options())).unique().all())
+    targets = []
+    for book in books:
+        if book.scrape_status in {"pending", "failed", "needs_review"}:
+            targets.append(book)
+        elif book.uuid in cleaned_uuids and book.scrape_status != "confirmed":
+            targets.append(book)
+    return targets
+
+
+def scrape_rescrape_books(session: Session) -> dict:
+    cleaned = clean_unlocked_dirty_titles(session)
+    targets = books_for_rescrape(session, {c["uuid"] for c in cleaned})
+    return _scrape_book_list(
+        session,
+        targets,
+        extra={"titles_cleaned": len(cleaned), "cleaned": cleaned},
+    )

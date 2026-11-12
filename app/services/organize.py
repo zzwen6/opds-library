@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Book, BookFile, OrganizeBatch, OrganizeMove
 from app.services.books import book_query_options
+from app.title_clean import clean_title, is_dirty_title
 from app.util import normalize_space
 
 ILLEGAL_CHARS = re.compile(r'[<>:"\\|?*\x00-\x1f]')
@@ -32,6 +33,16 @@ def library_is_writable(root: Path | None = None) -> bool:
         return False
 
 
+def cleaned_organize_title(book: Book) -> str:
+    """整理用书名：库里若仍是「Kindle电子书:《三体》」这类脏标题，用清洗结果。"""
+    raw = book.title or ""
+    if is_dirty_title(raw):
+        hint = clean_title(raw)
+        if hint.title:
+            return hint.title
+    return raw
+
+
 def sanitize_component(value: str | None, fallback: str = "未命名") -> str:
     text = unicodedata.normalize("NFC", value or "")
     text = text.replace("/", "／").replace("\\", "＼")
@@ -50,7 +61,7 @@ def _tokens_for(book: Book, book_file: BookFile) -> dict[str, str]:
         "authors": sanitize_component("、".join(authors) if authors else None, "未知作者"),
         "series": sanitize_component(book.series.name if book.series else "", ""),
         "series_index": sanitize_component(book.series_index or "", ""),
-        "title": sanitize_component(book.title, book_file.filename or "未命名"),
+        "title": sanitize_component(cleaned_organize_title(book), book_file.filename or "未命名"),
         "subtitle": sanitize_component(book.subtitle or "", ""),
         "publisher": sanitize_component(book.publisher.name if book.publisher else "", ""),
         "year": sanitize_component(year, ""),
@@ -153,7 +164,7 @@ def preview_organize(session: Session, template: str | None = None) -> dict:
                 {
                     "file_id": book_file.id,
                     "book_uuid": book.uuid,
-                    "title": book.title,
+                    "title": cleaned_organize_title(book),
                     "from_path": book_file.rel_path,
                     "to_path": final_rel,
                     "action": action,
@@ -165,7 +176,7 @@ def preview_organize(session: Session, template: str | None = None) -> dict:
                 {
                     "file_id": book_file.id,
                     "book_uuid": book.uuid,
-                    "title": book.title,
+                    "title": cleaned_organize_title(book),
                     "from_path": book_file.rel_path,
                     "to_path": None,
                     "action": "error",
