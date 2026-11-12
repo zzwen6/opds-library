@@ -164,12 +164,12 @@ docker compose up -d
 不想走 GHCR 时，照旧在本地构建，并在 `.env` 里覆盖镜像名：
 
 ```bash
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.7 .
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.8 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 ```
 
 ```
-OPDS_IMAGE=opds-library:0.5.7
+OPDS_IMAGE=opds-library:0.5.8
 DOUBAN_IMAGE=douban-book-api:zzwen6
 ```
 

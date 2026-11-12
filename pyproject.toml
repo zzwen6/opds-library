@@ -1,6 +1,6 @@
 [project]
 name = "opds-library"
-version = "0.5.7"
+version = "0.5.8"
 description = "自用 Web 电子书管理站 + OPDS 1.2 / 2.0 服务"
 readme = "README.md"
 requires-python = ">=3.12"

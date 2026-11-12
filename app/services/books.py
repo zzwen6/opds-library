@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, or_, select
@@ -78,6 +79,10 @@ def book_to_list_item(book: Book) -> BookListItem:
         cover_url=cover_url,
         thumb_url=thumb_url,
         series=book.series.name if book.series else None,
+        series_index=book.series_index,
+        tags=[bt.tag.name for bt in book.tags if bt.tag],
+        rating=book.rating,
+        published_date=book.published_date,
     )
 
 
@@ -102,11 +107,7 @@ def book_to_detail(book: Book) -> BookDetail:
         description=book.description,
         isbn10=book.isbn10,
         publisher=book.publisher.name if book.publisher else None,
-        series_index=book.series_index,
-        published_date=book.published_date,
         page_count=book.page_count,
-        rating=book.rating,
-        tags=[bt.tag.name for bt in book.tags if bt.tag],
         translators=book.translators,
         files=[
             FileOut(
@@ -146,6 +147,47 @@ def book_query_options():
     )
 
 
+_CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+
+
+def _cn_to_int(text: str) -> int | None:
+    total, num = 0, None
+    for ch in text:
+        if ch in _CN_DIGITS:
+            num = _CN_DIGITS[ch]
+        elif ch in _CN_UNITS:
+            total += (1 if num is None else num) * _CN_UNITS[ch]
+            num = None
+        else:
+            return None
+    total += num or 0
+    return total if text else None
+
+
+def series_index_key(value: str | None) -> tuple:
+    """丛书卷号的自然排序键：数字（含 1.5）与中文数字按数值，其余按文本，空值排最后。"""
+    text = normalize_space(value)
+    if not text:
+        return (2, 0.0, "")
+    m = re.search(r"\d+(?:\.\d+)?", text)
+    if m:
+        return (0, float(m.group()), text.casefold())
+    m = re.search(r"[零〇一二两三四五六七八九十百千]+", text)
+    if m:
+        n = _cn_to_int(m.group())
+        if n is not None:
+            return (0, float(n), text.casefold())
+    return (1, 0.0, text.casefold())
+
+
+def _title_key(sort_title: str | None, title: str | None) -> str:
+    return (sort_title or title or "").casefold()
+
+
+BOOK_SORTS = ("added", "title", "author", "series", "rating", "published")
+
+
 def list_books(
     session: Session,
     q: str | None = None,
@@ -156,61 +198,108 @@ def list_books(
     language: str | None = None,
     format: str | None = None,
     scrape_status: str | None = None,
+    missing_cover: bool = False,
+    missing_tags: bool = False,
     sort: str = "added",
     page: int = 1,
     page_size: int = 50,
 ) -> tuple[list[Book], int]:
-    stmt = select(Book).options(*book_query_options())
-    count_stmt = select(func.count(Book.id))
-
+    conds = []
+    q = (q or "").strip()
     if q:
-        like = f"%{q.strip()}%"
+        like = f"%{q}%"
         author_ids = select(BookAuthor.book_id).join(Author).where(Author.name.ilike(like))
-        filt = or_(
-            Book.title.ilike(like),
-            Book.subtitle.ilike(like),
-            Book.isbn13.ilike(like),
-            Book.isbn10.ilike(like),
-            Book.description.ilike(like),
-            Book.id.in_(author_ids),
+        tag_ids = select(BookTag.book_id).join(Tag).where(Tag.name.ilike(like))
+        series_ids = select(Series.id).where(Series.name.ilike(like))
+        publisher_ids = select(Publisher.id).where(Publisher.name.ilike(like))
+        conds.append(
+            or_(
+                Book.title.ilike(like),
+                Book.subtitle.ilike(like),
+                Book.isbn13.ilike(like),
+                Book.isbn10.ilike(like),
+                Book.description.ilike(like),
+                Book.id.in_(author_ids),
+                Book.id.in_(tag_ids),
+                Book.series_id.in_(series_ids),
+                Book.publisher_id.in_(publisher_ids),
+            )
         )
-        stmt = stmt.where(filt)
-        count_stmt = count_stmt.where(filt)
     if author_id:
-        stmt = stmt.where(Book.id.in_(select(BookAuthor.book_id).where(BookAuthor.author_id == author_id)))
-        count_stmt = count_stmt.where(
-            Book.id.in_(select(BookAuthor.book_id).where(BookAuthor.author_id == author_id))
-        )
+        conds.append(Book.id.in_(select(BookAuthor.book_id).where(BookAuthor.author_id == author_id)))
     if series_id:
-        stmt = stmt.where(Book.series_id == series_id)
-        count_stmt = count_stmt.where(Book.series_id == series_id)
+        conds.append(Book.series_id == series_id)
     if tag_id:
-        stmt = stmt.where(Book.id.in_(select(BookTag.book_id).where(BookTag.tag_id == tag_id)))
-        count_stmt = count_stmt.where(Book.id.in_(select(BookTag.book_id).where(BookTag.tag_id == tag_id)))
+        conds.append(Book.id.in_(select(BookTag.book_id).where(BookTag.tag_id == tag_id)))
     if publisher_id:
-        stmt = stmt.where(Book.publisher_id == publisher_id)
-        count_stmt = count_stmt.where(Book.publisher_id == publisher_id)
+        conds.append(Book.publisher_id == publisher_id)
     if language:
-        stmt = stmt.where(Book.language == language)
-        count_stmt = count_stmt.where(Book.language == language)
+        conds.append(Book.language == language)
     if format:
         file_ids = select(BookFile.book_id).where(BookFile.format == format, BookFile.missing_at.is_(None))
-        stmt = stmt.where(Book.id.in_(file_ids))
-        count_stmt = count_stmt.where(Book.id.in_(file_ids))
+        conds.append(Book.id.in_(file_ids))
     if scrape_status:
-        stmt = stmt.where(Book.scrape_status == scrape_status)
-        count_stmt = count_stmt.where(Book.scrape_status == scrape_status)
+        conds.append(Book.scrape_status == scrape_status)
+    if missing_cover:
+        # 与列表取封面的逻辑一致：没有主封面且没有任何封面记录
+        conds.append(Book.cover_id.is_(None))
+        conds.append(~Book.id.in_(select(Cover.book_id)))
+    if missing_tags:
+        conds.append(~Book.id.in_(select(BookTag.book_id)))
 
-    if sort == "title":
-        stmt = stmt.order_by(func.lower(Book.sort_title), func.lower(Book.title))
-    elif sort == "author":
-        stmt = stmt.order_by(Book.id)
-    else:
-        stmt = stmt.order_by(Book.added_at.desc())
-
-    total = session.scalar(count_stmt) or 0
+    total = session.scalar(select(func.count(Book.id)).where(*conds)) or 0
     page = max(page, 1)
-    rows = session.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).unique().all()
+    offset = (page - 1) * page_size
+
+    if sort == "series":
+        # 卷号是字符串（1、1.5、第三卷…），在 Python 里做自然排序后再分页
+        keys = session.execute(
+            select(Book.id, Series.sort_name, Series.name, Book.series_index, Book.sort_title, Book.title)
+            .outerjoin(Series, Book.series_id == Series.id)
+            .where(*conds)
+        ).all()
+        keys.sort(
+            key=lambda r: (
+                r[2] is None,
+                (r[1] or r[2] or "").casefold(),
+                series_index_key(r[3]),
+                _title_key(r[4], r[5]),
+                r[0],
+            )
+        )
+        ids = [r[0] for r in keys[offset : offset + page_size]]
+        if not ids:
+            return [], int(total)
+        found = {
+            b.id: b
+            for b in session.scalars(select(Book).options(*book_query_options()).where(Book.id.in_(ids))).unique()
+        }
+        return [found[i] for i in ids if i in found], int(total)
+
+    stmt = select(Book).options(*book_query_options()).where(*conds)
+    title_order = (func.lower(func.coalesce(Book.sort_title, Book.title)), Book.id)
+    if sort == "title":
+        stmt = stmt.order_by(*title_order)
+    elif sort == "author":
+        first_author = (
+            select(func.lower(func.coalesce(Author.sort_name, Author.name)))
+            .join(BookAuthor, BookAuthor.author_id == Author.id)
+            .where(BookAuthor.book_id == Book.id)
+            .order_by(BookAuthor.position, Author.id)
+            .limit(1)
+            .correlate(Book)
+            .scalar_subquery()
+        )
+        stmt = stmt.order_by(first_author.is_(None), first_author, *title_order)
+    elif sort == "rating":
+        stmt = stmt.order_by(Book.rating.is_(None), Book.rating.desc(), *title_order)
+    elif sort == "published":
+        no_date = or_(Book.published_date.is_(None), Book.published_date == "")
+        stmt = stmt.order_by(no_date, Book.published_date.desc(), *title_order)
+    else:
+        stmt = stmt.order_by(Book.added_at.desc(), Book.id.desc())
+
+    rows = session.scalars(stmt.offset(offset).limit(page_size)).unique().all()
     return list(rows), int(total)
 
 

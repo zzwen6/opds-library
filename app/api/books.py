@@ -68,6 +68,8 @@ def api_list_books(
     language: str | None = None,
     format: str | None = None,
     scrape_status: str | None = None,
+    missing_cover: bool = False,
+    missing_tags: bool = False,
     sort: str = "added",
     page: int = Query(1, ge=1),
     page_size: int | None = Query(None, ge=1, le=200),
@@ -84,6 +86,8 @@ def api_list_books(
         language=language,
         format=format,
         scrape_status=scrape_status,
+        missing_cover=missing_cover,
+        missing_tags=missing_tags,
         sort=sort,
         page=page,
         page_size=size,
@@ -175,8 +179,13 @@ def api_tags(session: Session = Depends(get_session)):
 
 @router.get("/publishers")
 def api_publishers(session: Session = Depends(get_session)):
-    rows = session.scalars(select(Publisher).order_by(Publisher.name)).all()
-    return [{"id": p.id, "name": p.name} for p in rows]
+    rows = session.execute(
+        select(Publisher, func.count(Book.id))
+        .outerjoin(Book, Book.publisher_id == Publisher.id)
+        .group_by(Publisher.id)
+        .order_by(Publisher.name)
+    ).all()
+    return [{"id": p.id, "name": p.name, "book_count": count} for p, count in rows]
 
 
 @router.get("/meta/filters")

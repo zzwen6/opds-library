@@ -8,6 +8,7 @@
 - 手动编辑元数据，字段级锁定，防止后续刮削覆盖
 - 可插拔刮削器：内置 Open Library、Google Books，以及通过独立 HTTP 服务接入的豆瓣中文源。中文书优先豆瓣，其他优先 Open Library。高分或 ISBN 精确命中时自动写入未锁定字段，可在 Web 上撤销一次；也可批量刮削未处理书目
 - 可选按模板整理、重命名书库文件（默认关闭；先预览再执行，可回滚）
+- 书目浏览：左侧分类栏按作者 / 丛书 / 标签 / 出版社筛选（带本数，可与搜索叠加；点丛书按卷号排）；搜索覆盖书名、作者、丛书、标签、出版社、ISBN；封面网格与列表视图切换；按入库、标题、作者、丛书、评分、出版日期排序；快速筛出无封面、无标签、待刮削的书（0.5.8）
 - 网页上传图书：在书目页选择或拖放文件，保存到书库 `inbox/` 后自动入库并刮削（0.5.5；书库目录需可写，不必开启整理功能）
 - 批量编辑：多选书目，一次改作者、系列（可自动编号）、标签、语言、出版社；作者写法归并；先预览影响范围，跳过已锁定字段，可撤销（0.4.0）
 - 重复书检测：文件哈希相同、ISBN 相同、书名+作者模糊匹配三类线索；可把同一本书的多种格式合并到一个条目，或标记“不是重复”；只改数据库，不删磁盘文件，合并可撤销（0.4.0）
@@ -37,13 +38,13 @@ docker compose up -d
 也可以不走 GHCR，在本地构建：
 
 ```bash
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.7 .
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.8 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 # Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
 # 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
 ```
 
-然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.7` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
+然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.8` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
 
 Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 

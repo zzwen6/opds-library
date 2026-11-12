@@ -84,17 +84,17 @@ class BookListItem(BaseModel):
     cover_url: Optional[str] = None
     thumb_url: Optional[str] = None
     series: Optional[str] = None
+    series_index: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    rating: Optional[float] = None
+    published_date: Optional[str] = None
 
 
 class BookDetail(BookListItem):
     description: Optional[str] = None
     isbn10: Optional[str] = None
     publisher: Optional[str] = None
-    series_index: Optional[str] = None
-    published_date: Optional[str] = None
     page_count: Optional[int] = None
-    rating: Optional[float] = None
-    tags: list[str] = Field(default_factory=list)
     translators: Optional[str] = None
     files: list[FileOut] = Field(default_factory=list)
     locks: list[FieldLockOut] = Field(default_factory=list)
