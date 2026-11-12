@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -17,8 +17,45 @@ from app.services.books import (
     unlock_field,
     update_book,
 )
+from app.services.upload import LIBRARY_NOT_WRITABLE, save_uploads, start_upload_scrape
 
 router = APIRouter(tags=["books"])
+
+
+@router.post("/books/upload")
+def api_upload_books(
+    files: list[UploadFile] | None = File(default=None),
+    session: Session = Depends(get_session),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="请选择要上传的文件")
+    try:
+        result = save_uploads(session, ((f.filename, f.file) for f in files))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc) or LIBRARY_NOT_WRITABLE) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    scrape_uuids = result.get("scrape_uuids") or []
+    # 先提交入库，再后台刮削，避免新书尚未可见
+    session.commit()
+    scrape_started = bool(scrape_uuids)
+    if scrape_started:
+        start_upload_scrape(scrape_uuids)
+    saved = result["saved"]
+    if saved and scrape_started:
+        message = f"已保存 {saved} 个文件并入库，正在自动刮削"
+    elif saved:
+        message = f"已保存 {saved} 个文件并入库"
+    else:
+        message = "没有文件被保存"
+    return {
+        "ok": result["ok"],
+        "message": message,
+        "saved": saved,
+        "failed": result["failed"],
+        "scrape_started": scrape_started,
+        "items": result["items"],
+    }
 
 
 @router.get("/books")

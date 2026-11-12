@@ -4,16 +4,16 @@
 # 收到 webhook 后自动拉取并重建容器。一次性配置见 docs/DEPLOY.md。
 #
 # 也可以在本地构建后覆盖镜像名：
-#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.4 .
+#   docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.5 .
 #   docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
-#   在 .env 里设 OPDS_IMAGE=opds-library:0.5.4 和 DOUBAN_IMAGE=douban-book-api:zzwen6
+#   在 .env 里设 OPDS_IMAGE=opds-library:0.5.5 和 DOUBAN_IMAGE=douban-book-api:zzwen6
 #
 # 然后 cp .env.example .env，改好 AUTH_PASSWORD、路径和 DEPLOY_WEBHOOK_TOKEN，执行：
 #   docker compose up -d
 services:
   opds-library:
     image: ${OPDS_IMAGE:-ghcr.io/zzwen6/opds-library:latest}
-    # 以非 root 运行；UID/GID 需对 /data（以及启用整理时的 /library）有写权限，见 README
+    # 以非 root 运行；UID/GID 需对 /data（以及启用整理或网页上传时的 /library）有写权限，见 README
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:
       - "${HTTP_PORT:-8080}:8080"
@@ -37,8 +37,9 @@ services:
       DOUBAN_COVER_BROWSER_HEADERS: ${DOUBAN_COVER_BROWSER_HEADERS:-true}
     volumes:
       # 书库默认只读挂载，服务不会写回原文件内容。
-      # 若要启用整理/改名（ORGANIZE_ENABLED=true），把下一行的 :ro 去掉，改为：
+      # 若要启用网页上传或整理/改名，把下一行的 :ro 去掉，改为：
       #   - ${LIBRARY_HOST_PATH:-./library}:/library
+      # 上传不需要 ORGANIZE_ENABLED。
       - ${LIBRARY_HOST_PATH:-./library}:/library:ro
       - ${DATA_HOST_PATH:-./data}:/data
     labels:

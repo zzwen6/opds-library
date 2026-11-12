@@ -8,6 +8,7 @@
 - 手动编辑元数据，字段级锁定，防止后续刮削覆盖
 - 可插拔刮削器：内置 Open Library、Google Books，以及通过独立 HTTP 服务接入的豆瓣中文源。中文书优先豆瓣，其他优先 Open Library。高分或 ISBN 精确命中时自动写入未锁定字段，可在 Web 上撤销一次；也可批量刮削未处理书目
 - 可选按模板整理、重命名书库文件（默认关闭；先预览再执行，可回滚）
+- 网页上传图书：在书目页选择或拖放文件，保存到书库 `inbox/` 后自动入库并刮削（0.5.5；书库目录需可写，不必开启整理功能）
 - 批量编辑：多选书目，一次改作者、系列（可自动编号）、标签、语言、出版社；作者写法归并；先预览影响范围，跳过已锁定字段，可撤销（0.4.0）
 - 重复书检测：文件哈希相同、ISBN 相同、书名+作者模糊匹配三类线索；可把同一本书的多种格式合并到一个条目，或标记“不是重复”；只改数据库，不删磁盘文件，合并可撤销（0.4.0）
 - OPDS 2.0（JSON）：与 1.2 并存，覆盖相同的目录，另有语言浏览、排序/语言筛选（facet）、单书清单和 OPDS 认证文档（0.5.0）
@@ -36,13 +37,13 @@ docker compose up -d
 也可以不走 GHCR，在本地构建：
 
 ```bash
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.4 .
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.5 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 # Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
 # 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
 ```
 
-然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.4` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
+然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.5` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
 
 Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 
@@ -56,7 +57,7 @@ Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部
 
 在阅读器里填写 OPDS 地址 `http://<主机>:8080/opds`（大多数阅读器）或 `http://<主机>:8080/opds2`（支持 OPDS 2.0 的阅读器，如 Thorium），认证方式选择 HTTP Basic。若要暴露到外网，请放在 HTTPS 反代后面；不要在明文 HTTP 上使用 Basic 认证出网。
 
-书库目录默认以 **只读**（`:ro`）方式挂载。封面、缩略图和数据库写在 `./data`（或 `DATA_HOST_PATH`）。若要启用整理/改名，见下方说明。
+书库目录默认以 **只读**（`:ro`）方式挂载。封面、缩略图和数据库写在 `./data`（或 `DATA_HOST_PATH`）。若要使用网页上传或整理/改名，需改为可写挂载，见下方说明。
 
 ### NAS 权限
 
@@ -64,7 +65,7 @@ Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部
 
 - **数据目录（`DATA_HOST_PATH`）必须可写**：数据库、封面、缩略图都写在这里。若目录由 root 创建，执行 `sudo chown -R PUID:PGID ./data`（换成实际数字）。
 - **书库目录（`LIBRARY_HOST_PATH`）默认只读挂载**，该用户能读就行。
-- **启用整理/改名时书库必须可写**：除了去掉挂载上的 `:ro`，这个用户还要对书库目录及其子目录有写权限。
+- **网页上传或启用整理/改名时书库必须可写**：除了去掉挂载上的 `:ro`，这个用户还要对书库目录及其子目录有写权限。上传不需要 `ORGANIZE_ENABLED`。
 - 如果目录不存在，Docker 会以 root 身份自动创建，容器内的非 root 用户就写不进去，所以请先 `mkdir` 再启动。
 - 从旧版（以 root 运行）升级时，`./data` 里已有的文件属主可能是 root，需要先 chown 一次。
 
@@ -110,7 +111,7 @@ alembic upgrade head
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `LIBRARY_PATH` | `./library` | 书库根目录。默认按只读约定使用；整理功能开启时需要可写 |
+| `LIBRARY_PATH` | `./library` | 书库根目录。默认按只读约定使用；网页上传或整理功能需要可写 |
 | `DATA_PATH` | `./data` | SQLite、封面与缩略图 |
 | `AUTH_USERNAME` | `admin` | Web / OPDS 共用 |
 | `AUTH_PASSWORD` | `changeme` | 请务必修改 |
@@ -160,6 +161,26 @@ Docker 部署时，`docker-compose.yml` 默认一起启动该服务（默认使�
 
 中文书（书名等含汉字，或 ISBN 为 978-7）优先采用豆瓣候选；其他书优先 Open Library。豆瓣标签取自页面里的「豆瓣成员常用标签」（需 douban-book-api 含 2026-11-11 的标签修复），通常有 5–10 个，作为候选标签参与写入；若 `original_title` 被误填成作者名，本项目会丢弃。下载 `*.doubanio.com` 封面时默认使用常见浏览器请求头（可用 `DOUBAN_COVER_BROWSER_HEADERS=false` 关闭）；失败时保留已有封面，不重试。封面写入仍尊重字段锁定与撤销。
 
+## 上传图书（0.5.5）
+
+在 Web「书目」页可通过「上传图书」或拖放，把 EPUB / PDF / MOBI / AZW3 / AZW / CBZ 传到书库。服务只保存原始字节，**不修改文件内容、不写回 OPF**。
+
+流程：文件写入书库下的 `inbox/` 目录（不存在则创建；重名时追加 `(2)`、`(3)`…）→ 走现有扫描逻辑入库（脏文件名会清洗成干净书名）→ 在后台对尚未刮削的新书自动刮削。高分或 ISBN 命中时自动写入未锁定字段；否则进入「刮削确认」。若文件哈希或 ISBN 与已有书目相同，会作为另一份文件入库并提示可能重复，**不会自动合并，也不会删除磁盘文件**。单个文件不超过 1 GB。
+
+**Docker 部署必须把书库挂载改为可写**，与整理功能相同，但**不必**开启 `ORGANIZE_ENABLED`。编辑 `docker-compose.yml`，将：
+
+```yaml
+- ${LIBRARY_HOST_PATH:-./library}:/library:ro
+```
+
+改为（去掉 `:ro`）：
+
+```yaml
+- ${LIBRARY_HOST_PATH:-./library}:/library
+```
+
+然后 `docker compose up -d`。若书库仍是只读，上传接口会返回 403。若前面还有 nginx 等反代，请把请求体上限调到不小于 1 GB（例如 `client_max_body_size 1024m;`）。
+
 ## 整理书库文件（默认关闭）
 
 整理只会 **移动/重命名** 文件，**不修改文件内容，不写回 OPF**。流程：在 Web「整理文件」页生成预览（dry-run）→ 确认后执行 → 数据库中的路径同步更新 → 需要时可按批次回滚。
@@ -180,7 +201,7 @@ Docker 部署时，`docker-compose.yml` 默认一起启动该服务（默认使�
    ```
 
    然后 `docker compose up -d`。未改挂载时，即使打开开关也会因目录只读而拒绝执行。
-3. 默认挂载仍是只读；不启用整理就不必改。
+3. 默认挂载仍是只读；不使用上传、也不启用整理时不必改。
 
 模板可用变量：`author`、`authors`、`series`、`series_index`、`title`、`subtitle`、`publisher`、`year`、`isbn`、`language`、`ext`、`format`、`filename`、`uuid`。非法字符会被替换，中文保留，空路径段省略，重名时追加 `(2)`、`(3)`…。
 
