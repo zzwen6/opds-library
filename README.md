@@ -37,13 +37,13 @@ docker compose up -d
 也可以不走 GHCR，在本地构建：
 
 ```bash
-docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.5 .
+docker build --build-arg PUID=1000 --build-arg PGID=1000 -t opds-library:0.5.6 .
 docker build -t douban-book-api:zzwen6 https://github.com/zzwen6/douban-book-api.git#master
 # Dockerfile 默认使用国内源（npm: registry.npmmirror.com，pip: mirrors.aliyun.com）。
 # 海外构建可覆盖：--build-arg NPM_REGISTRY=https://registry.npmjs.org/ --build-arg PIP_INDEX_URL=https://pypi.org/simple
 ```
 
-然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.5` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
+然后在 `.env` 里设 `OPDS_IMAGE=opds-library:0.5.6` 和 `DOUBAN_IMAGE=douban-book-api:zzwen6`，再 `docker compose up -d`。也可以在别的机器上构建后 `docker save` / `docker load` 导入 NAS，这样 NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件。
 
 Compose 默认会一起启动中文刮削用的 `douban-book-api`（只在内部网络可见，不占用宿主机 3000 端口），`DOUBAN_API_URL` 默认就是 `http://douban-book-api:3000`，不用另外配置。
 

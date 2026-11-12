@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session, DeclarativeBase, sessionmaker
 
 from app.config import get_settings
 
+# 刮削、扫描可能与网页确认同时写库。5 秒不够：一个源网络超时就能占满写锁。
+SQLITE_BUSY_TIMEOUT_MS = 30_000
+
 
 class Base(DeclarativeBase):
     pass
@@ -14,7 +17,7 @@ class Base(DeclarativeBase):
 def _configure_sqlite(dbapi_conn, _connection_record) -> None:
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
@@ -24,7 +27,10 @@ def create_db_engine(url: str | None = None) -> Engine:
     settings = get_settings()
     engine = create_engine(
         url or settings.database_url,
-        connect_args={"check_same_thread": False},
+        connect_args={
+            "check_same_thread": False,
+            "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000,
+        },
         pool_pre_ping=True,
     )
     event.listen(engine, "connect", _configure_sqlite)

@@ -99,12 +99,8 @@ def _persist(session: Session, book: Book, candidate: Candidate) -> ScrapeRecord
 
 
 def scrape_book(session: Session, book: Book) -> list[CandidateOut]:
-    # 清除未确认的旧候选
-    for old in list(book.scrape_records):
-        if old.status == "candidate":
-            session.delete(old)
-    session.flush()
-
+    # 先向各源发请求，再写库。若先 flush 删除，写锁会一直占到 Open Library 超时（约 20 秒），
+    # 期间网页确认会因 database is locked 返回 500。
     authors = _authors_of(book)
     # 书名可能是「Kindle电子书:《三体》」这类文件名式脏标题：查询用清洗后的书名，查不到再逐步缩短
     queries = query_titles(book.title)
@@ -151,6 +147,12 @@ def scrape_book(session: Session, book: Book) -> list[CandidateOut]:
             continue
         seen.add(key)
         unique.append(cand)
+
+    # 网络请求结束后再清旧候选并写入
+    for old in list(book.scrape_records):
+        if old.status == "candidate":
+            session.delete(old)
+    session.flush()
 
     records = [_persist(session, book, cand) for cand in unique]
     if records and _should_auto_apply(unique[0], book):
@@ -330,12 +332,18 @@ def apply_candidate(session: Session, book: Book, record_id: int, mode: str = "m
         payload[dest] = value
         applied.append(dest)
 
+    # 封面下载放在写库之前，避免确认时长时间占着写锁
+    fetched_cover = None
+    cover_url = data.get("cover_url")
+    if cover_url and "cover" not in locked:
+        fetched_cover = download_cover_image(cover_url)
+
     if payload:
         update_book(session, book, BookUpdate(**payload), auto_lock=False)
         book = session.merge(book)
 
-    if data.get("cover_url") and "cover" not in locked:
-        if _apply_cover_from_url(session, book, data["cover_url"], record.source):
+    if fetched_cover is not None:
+        if apply_downloaded_cover(session, book, fetched_cover, record.source):
             applied.append("cover")
 
     from app.services.books import get_book_by_uuid
@@ -449,13 +457,22 @@ def scrape_pending_books(session: Session) -> dict:
 
 
 def _scrape_book_list(session: Session, books: list[Book], extra: dict | None = None) -> dict:
+    from app.services.books import get_book_by_uuid
+
     result = {"total": len(books), "auto_applied": 0, "needs_review": 0, "failed": 0, "errors": []}
     if extra:
         result.update(extra)
-    for book in books:
+    # 按本提交，避免一本刮削的写操作拖住后面所有书的网络请求
+    uuids = [book.uuid for book in books]
+    for uuid in uuids:
+        book = get_book_by_uuid(session, uuid)
+        if book is None:
+            result["failed"] += 1
+            result["errors"].append(f"{uuid}: 书目已不存在")
+            continue
         try:
             scrape_book(session, book)
-            session.flush()
+            session.commit()
             if book.scrape_status == "auto_applied":
                 result["auto_applied"] += 1
             elif book.scrape_status == "needs_review":
@@ -463,10 +480,10 @@ def _scrape_book_list(session: Session, books: list[Book], extra: dict | None = 
             else:
                 result["failed"] += 1
         except Exception as exc:
+            session.rollback()
             result["failed"] += 1
-            result["errors"].append(f"{book.uuid}: {exc}")
-            logger.warning("批量刮削失败 %s: %s", book.uuid, exc)
-    session.flush()
+            result["errors"].append(f"{uuid}: {exc}")
+            logger.warning("批量刮削失败 %s: %s", uuid, exc)
     return result
 
 
